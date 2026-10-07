@@ -24,22 +24,73 @@ that have aged worst in the C:
 
 ### Where it stands
 
-- Still in planning.
+- **Documentation and plan only.** Three tracked files — `.gitmodules`,
+  `CLAUDE.md`, `BOOTSTRAP.md` — plus the `openldap/` submodule at
+  `OPENLDAP_REL_ENG_2_7_1`. There is no Go in the repository yet: no
+  `go.mod`, no `internal/`, no `Makefile`.
+- Host toolchain: Go 1.26.5, Podman 5.8.3.
+- The module path is settled by the remote:
+  `github.com/FatmanUK/openldap_olivine`. Note that the remote repository
+  name inverts the local directory name (`olivine_ldap`); the Go module path
+  follows the remote.
 
 ## 2. Next Three Steps
 
-To be determined by planning, though the plan's first step will be to update
-`CLAUDE.md` and `BOOTSTRAP.md`.
+The plan is `~/.claude/plans/a-green-stone-in-the-socket.md`, and it is
+authoritative for sequencing. In brief:
+
+1. ~~Reconcile the documentation with reality.~~ Done — this commit.
+2. **Repository skeleton.** `go.mod` on `github.com/FatmanUK/openldap_olivine`,
+   a `Makefile` whose targets are the contract (`build`, `test`,
+   `golden-build`, `golden`, `lint`), and the package layout.
+3. **The BER codec, `internal/ber`**, ported from
+   `libraries/liblber/{decode,encode,io}.c`. Everything sits on it, so it goes
+   first.
+
+The plan carries the ordering beyond that, and three open questions —
+whether `syncrepl.c` is ported at all, whether `cn=config` becomes a
+read-only projection of the environment, and how far SASL goes beyond simple
+bind over TLS — each tagged with the step it blocks.
 
 ## 3. Project State
 
 ### 3.1 Key Logic
 
-- Nothing decided yet.
+No code yet. Two decisions already taken about the BER layer, because they
+determine its shape:
+
+- **The resumable reader is not ported.**
+  `libraries/liblber/io.c:473` carries a comment explaining that
+  `ber_get_next` "can safely be called multiple times for the same packet"
+  and resumes where it stopped. That state machine exists because slapd
+  multiplexes connections over a poll loop. A goroutine per connection blocks
+  on `io.ReadFull` instead, and the resumption state is dead weight. This is
+  the first place the Go will look wrong to someone reading the C.
+- **`ber_printf`/`ber_scanf` are not reimplemented.** The variadic format
+  language is replaced by typed encode/decode against the message structs.
+  Confirm against `encode.c` that no on-the-wire behaviour hides in the
+  format layer before discarding it.
 
 ### 3.2 Architecture
 
-- Nothing decided yet.
+Package layout, mirroring the C's separation of concerns rather than its file
+layout. None of these exist yet.
+
+| Go package | Ported from |
+|---|---|
+| `internal/ber` | `libraries/liblber/{decode,encode,io}.c` |
+| `internal/ldap` | protocol messages, RFC 4511 |
+| `internal/server` | `servers/slapd/{daemon,connection}.c` |
+| `internal/schema` | `servers/slapd/{at,oc,syntax,mr,schema_init}.c` |
+| `internal/dn` | `servers/slapd/dn.c` |
+| `internal/store` | new — Postgres/GORM, no C analogue |
+| `internal/golden` | new — the oracle |
+
+The operation dispatch to match is `servers/slapd/connection.c:1080-1089`.
+
+TLS-only means `servers/slapd/starttls.c` is deliberately not ported, but the
+StartTLS extended operation must still be *recognised* and answered
+`unwillingToPerform` — not met with silence or a parse error.
 
 ### 3.3 Decisions
 
@@ -54,7 +105,14 @@ are not "fixed" back by accident.
 **Compatibility choices:**
 
 - **TLS only** — no cleartext, no STARTTLS.
-- **Argon2id passwords**, with legacy algorithms read but not written.
+- **Argon2id passwords** by default, with legacy algorithms read but not
+  written. This is a divergence in *default*, not in format: upstream already
+  ships argon2 as an optional loadable module at
+  `servers/slapd/pwmods/argon2.c`, scheme tag `{ARGON2}`, argon2id with
+  iterations 5, memory 7168 KiB, parallelism 1, 16-byte salt and 32-byte
+  hash. Matching those parameters keeps hashes mutually readable between the
+  two implementations, so match them unless there is a reason not to — and
+  record the reason.
 - **New code says TLS, not SSL** — it's been TLS for over 20 years. Time to
   drop the SSL nomenclature (except where it would cause a problem).
 
@@ -71,7 +129,8 @@ are not "fixed" back by accident.
 
 ## 4. Dependency Map
 
-**External Go modules** (`go.mod`):
+**External Go modules** — *intended, not present.* There is no `go.mod`
+yet; this is the dependency set the skeleton will declare:
 
 - `golang.org/x/crypto` — Argon2id
 - `gorm.io/gorm` + `gorm.io/driver/postgres` (+ transitive `jackc/pgx`,
@@ -91,11 +150,20 @@ Most recent first.
 
 | Commit | Summary |
 |---|---|
+| `cceb99c` | Add CLAUDE.md and BOOTSTRAP.md |
 | `1577993` | Add openldap submodule |
+| `32aa4b7` | Commit nothing |
 
 Working branch: `mother`. Never merge the `openldap/`-adjacent branches
 into `mother`; they are read-only reference.
 
 ## 6. Testing Status
 
-Nothing tested yet.
+Nothing tested yet, because there is nothing to test. The first tests arrive
+with `internal/ber` (plan step 3): table-driven round-trips plus a fuzz target
+on the decoder. A malformed-length panic in the decoder is a remote crash
+later, and under crash-only architecture a panic is a restart.
+
+The golden harness (plan step 5) is deliberately sequenced before schema and
+the operations, so that everything from that point on is verified against the
+C rather than reasoned about.

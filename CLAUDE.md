@@ -10,11 +10,11 @@ with six deliberate departures: Go instead of C, TLS-only networking, Postgres/G
 instead of a flat-file database, rootless Podman containers instead of autotools,
 crash-only architecture and high-availability through the 12-factor manifesto.
 
-**There must be exactly one plan file for this project**, and it lives in
-`~/.claude/plans`. That directory is shared across every project on this machine,
-so other plan files live there too: they belong to unrelated work and are never read
-or edited from here. `BOOTSTRAP.md` §2 is the narrative of what has landed, and the
-plan file is what is next.
+**There must be exactly one plan file for this project.** It is
+`~/.claude/plans/a-green-stone-in-the-socket.md`. That directory is shared across
+every project on this machine, so other plan files live there too: they belong to
+unrelated work and are never read or edited from here. `BOOTSTRAP.md` §2 is the
+narrative of what has landed, and the plan file is what is next.
 
 ## The C reference is a submodule
 
@@ -57,8 +57,14 @@ say so and cite the file and line.
 
 ## The golden-output harness
 
-`internal/golden` is the oracle. It builds a test database, drives the same
+**Not built yet.** This is the design, and it is the plan's step 5.
+Until it exists, nothing in this section describes code you can run.
+
+`internal/golden` will be the oracle. It builds a test database, drives the same
 script through OpenLDAP built from the `openldap` submodule and through this
 project, and diffs the transcripts. The C runs in a container over TCP; this
 project runs in-process. Reading the C and reasoning about it is guesswork;
 the harness answers directly.
+
+Upstream ships 113 entries under `openldap/tests/scripts`. That is the corpus
+the harness drives — it is not something to invent.
