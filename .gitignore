@@ -1,0 +1,15 @@
+# Build output
+/bin/
+/dist/
+
+# Test and coverage artefacts
+*.test
+*.out
+coverage.*
+
+# Golden-harness scratch (plan step 5)
+/internal/golden/testdata/tmp/
+
+# Editor and OS noise
+*~
+.DS_Store

@@ -24,10 +24,15 @@ that have aged worst in the C:
 
 ### Where it stands
 
-- **Documentation and plan only.** Three tracked files — `.gitmodules`,
-  `CLAUDE.md`, `BOOTSTRAP.md` — plus the `openldap/` submodule at
-  `OPENLDAP_REL_ENG_2_7_1`. There is no Go in the repository yet: no
-  `go.mod`, no `internal/`, no `Makefile`.
+- **Skeleton standing, no protocol code.** `go.mod`, a `Makefile` whose
+  targets are the contract, the package layout under `internal/`, and
+  `cmd/olivined`. Every package is a `doc.go` stating what it is ported
+  from; none has an implementation.
+- `make lint`, `make test` and `make build` all pass. The binary builds and
+  answers `-version`; invoked as a server it reports that it is not
+  implemented and exits 1.
+- `make golden` and `make golden-build` exist and fail deliberately,
+  pointing at plan step 5.
 - Host toolchain: Go 1.26.5, Podman 5.8.3.
 - The module path is settled by the remote:
   `github.com/FatmanUK/openldap_olivine`. Note that the remote repository
@@ -39,13 +44,15 @@ that have aged worst in the C:
 The plan is `~/.claude/plans/a-green-stone-in-the-socket.md`, and it is
 authoritative for sequencing. In brief:
 
-1. ~~Reconcile the documentation with reality.~~ Done — this commit.
-2. **Repository skeleton.** `go.mod` on `github.com/FatmanUK/openldap_olivine`,
-   a `Makefile` whose targets are the contract (`build`, `test`,
-   `golden-build`, `golden`, `lint`), and the package layout.
+1. ~~Reconcile the documentation with reality.~~ Done, `db5fd8e`.
+2. ~~Repository skeleton.~~ Done — this commit.
 3. **The BER codec, `internal/ber`**, ported from
-   `libraries/liblber/{decode,encode,io}.c`. Everything sits on it, so it goes
-   first.
+   `libraries/liblber/{decode,encode,io}.c`. Everything sits on it, so it
+   goes first. Table-driven round-trips plus a fuzz target on the decoder:
+   a malformed-length panic there is a remote crash later, and under
+   crash-only architecture a panic is a restart.
+4. **TLS listener and connection lifecycle**, matching the dispatch at
+   `connection.c:1080-1089`.
 
 The plan carries the ordering beyond that, and three open questions —
 whether `syncrepl.c` is ported at all, whether `cn=config` becomes a
@@ -74,7 +81,7 @@ determine its shape:
 ### 3.2 Architecture
 
 Package layout, mirroring the C's separation of concerns rather than its file
-layout. None of these exist yet.
+layout. All of these exist as `doc.go` only; the implementations do not.
 
 | Go package | Ported from |
 |---|---|
@@ -85,6 +92,7 @@ layout. None of these exist yet.
 | `internal/dn` | `servers/slapd/dn.c` |
 | `internal/store` | new — Postgres/GORM, no C analogue |
 | `internal/golden` | new — the oracle |
+| `cmd/olivined` | `servers/slapd` (the daemon entry point) |
 
 The operation dispatch to match is `servers/slapd/connection.c:1080-1089`.
 
@@ -113,12 +121,22 @@ are not "fixed" back by accident.
   hash. Matching those parameters keeps hashes mutually readable between the
   two implementations, so match them unless there is a reason not to — and
   record the reason.
+- **The daemon is `olivined`, not `slapd`.** The name follows the C's
+  daemon convention (`slapd`, `lloadd`) rather than reusing `slapd`, because
+  the two are not drop-in substitutes: Olivine is TLS-only and configured
+  from the environment, so anything invoking `slapd` with a `slapd.conf`
+  would fail in confusing ways. Better to fail at "command not found".
 - **New code says TLS, not SSL** — it's been TLS for over 20 years. Time to
   drop the SSL nomenclature (except where it would cause a problem).
 
 ### 3.4 Other
 
-- **Go source is 70 columns, tab counted as 8.**
+- **Go source is 70 columns, tab counted as 8**, and functions are 40 lines
+  at most. Both are enforced by `scripts/check-style.sh`, which `make lint`
+  runs via `make style`. It reads `git ls-files --cached --others
+  --exclude-standard`, so files that are written but not yet staged are
+  checked too — an earlier version read only the index, and new code passed
+  the check right up until someone staged it.
 - **Store tests must never share a database with a real world.** The scratch
   schema goes in the connection string, not a `SET search_path`: GORM pools
   connections, so the SET reaches one of them and every other query lands in
@@ -129,12 +147,17 @@ are not "fixed" back by accident.
 
 ## 4. Dependency Map
 
-**External Go modules** — *intended, not present.* There is no `go.mod`
-yet; this is the dependency set the skeleton will declare:
+**External Go modules** — `go.mod` exists and declares *no* dependencies.
+Nothing is required until the code that needs it lands, and a module listed
+early is one `go mod tidy` removes again. This is the set expected to arrive,
+with the step that brings it:
 
-- `golang.org/x/crypto` — Argon2id
+- `golang.org/x/crypto` — Argon2id (step 8, bind)
 - `gorm.io/gorm` + `gorm.io/driver/postgres` (+ transitive `jackc/pgx`,
-  `pgpassfile`, `pgservicefile`, `puddle`) — persistence
+  `pgpassfile`, `pgservicefile`, `puddle`) — persistence (step 7)
+
+The BER codec, the protocol layer and the TLS listener need nothing outside
+the standard library.
 
 **External non-Go dependency**:
 
@@ -148,8 +171,12 @@ read. No Go package imports it.
 
 Most recent first.
 
+A commit cannot record its own hash, so this log necessarily lags by one.
+The newest entry is the commit before HEAD.
+
 | Commit | Summary |
 |---|---|
+| `db5fd8e` | Reconcile the docs with the actual repository state |
 | `cceb99c` | Add CLAUDE.md and BOOTSTRAP.md |
 | `1577993` | Add openldap submodule |
 | `32aa4b7` | Commit nothing |
@@ -159,10 +186,17 @@ into `mother`; they are read-only reference.
 
 ## 6. Testing Status
 
-Nothing tested yet, because there is nothing to test. The first tests arrive
-with `internal/ber` (plan step 3): table-driven round-trips plus a fuzz target
-on the decoder. A malformed-length panic in the decoder is a remote crash
-later, and under crash-only architecture a panic is a restart.
+No Go tests yet — `make test` reports "no test files" for all eight
+packages, which is the honest result and not a passing suite. What *is*
+verified is the toolchain: `make lint`, `make test` and `make build` pass,
+and `scripts/check-style.sh` was checked against a deliberately bad file to
+confirm it fails on both an 87-column line and a 42-line function. A style
+checker that cannot fail is worse than none.
+
+The first real tests arrive with `internal/ber` (plan step 3): table-driven
+round-trips plus a fuzz target on the decoder. A malformed-length panic in
+the decoder is a remote crash later, and under crash-only architecture a
+panic is a restart.
 
 The golden harness (plan step 5) is deliberately sequenced before schema and
 the operations, so that everything from that point on is verified against the
