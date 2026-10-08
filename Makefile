@@ -8,6 +8,11 @@ VERSION := $(shell git describe --tags --always --dirty \
 	2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
+# The registry the image is pushed to. Override to publish
+# elsewhere.
+REGISTRY ?= ghcr.io/fatmanuk
+IMAGE    ?= $(REGISTRY)/olivine-ldap
+
 .PHONY: all build test race store postgres-down lint fmt \
 	fmt-check vet style width-check golden golden-data \
 	golden-acl golden-build clean help
@@ -75,6 +80,21 @@ width-check:
 # width-check.
 fmt: fmt-check
 style: width-check
+
+## pod-build: build the Olivine server image (rootless Podman)
+pod-build:
+	$(PODMAN) build -t $(IMAGE):$(VERSION) \
+		-t $(IMAGE):latest \
+		-f deploy/Containerfile .
+
+## pod-push: push the image to the registry
+pod-push:
+	$(PODMAN) push $(IMAGE):$(VERSION)
+	$(PODMAN) push $(IMAGE):latest
+
+## pod-run: run the image against a throwaway Postgres
+pod-run:
+	@./scripts/pod-run.sh
 
 ## golden-build: build the C oracle container from openldap/
 golden-build:

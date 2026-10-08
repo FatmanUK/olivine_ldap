@@ -1,0 +1,11 @@
+# The submodule is build-time reference for the golden harness and
+# has no business in the image: the standard schema is embedded.
+openldap/
+
+# Build output and scratch.
+bin/
+dist/
+
+# Nothing in the image needs these.
+.git/
+.github/

@@ -1,0 +1,56 @@
+# The Olivine LDAP server image.
+#
+# Rootless by construction: a non-root user, an unprivileged
+# port, a read-only-friendly filesystem and no capabilities. The
+# departure from autotools is the whole point of this file — there
+# is nothing to configure at build time, because configuration
+# comes from the environment at run time.
+#
+# Two stages. The builder is thrown away; the runtime holds a
+# static binary and the CA bundle, nothing else. No shell, no
+# package manager, and so nothing for a foothold to use.
+
+FROM docker.io/library/golang:1.26-alpine AS build
+
+# git for the version stamp, which comes from `git describe`.
+RUN apk add --no-cache git make
+
+WORKDIR /src
+# Dependencies first, so a source change does not refetch them.
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# CGO off gives a static binary, which is what lets the runtime
+# stage be scratch. The embedded standard schema means no .schema
+# files have to be carried either.
+ENV CGO_ENABLED=0
+RUN make build
+
+FROM scratch
+
+# The CA bundle, for verifying Postgres's certificate when the
+# connection string asks for TLS. Nothing else from the builder.
+COPY --from=build \
+	/etc/ssl/certs/ca-certificates.crt \
+	/etc/ssl/certs/ca-certificates.crt
+COPY --from=build /src/bin/olivined /olivined
+
+# A fixed high UID. scratch has no /etc/passwd, so the user is
+# numeric: there is no account to name.
+USER 10001:10001
+
+# 6360, not 636. An unprivileged process cannot bind a port below
+# 1024, which is how the golden oracle first failed — slapd's
+# `ldaps:///` defaults to 636 and died with
+# "daemon: bind(6) failed errno=13". Map it on the host:
+#
+#   podman run -p 636:6360 ...
+ENV OLIVINE_LISTEN=:6360
+EXPOSE 6360
+
+# Crash-only: no entrypoint script, no supervisor, no graceful
+# shutdown to wait for. The server is meant to be killed and
+# restarted, and it brings the database schema up to date on start.
+ENTRYPOINT ["/olivined"]

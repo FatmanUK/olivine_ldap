@@ -62,6 +62,10 @@ that have aged worst in the C:
   `cn=Subschema` by `scripts/derive-standard.sh`. A Go-only binary resolves
   `dc`, `ou` and `person` with no submodule, which is what lets the CI — which
   checks out without submodules — actually run the store tests.
+- **There is a container.** `make pod-build` produces a ~19 MB image from
+  `scratch` — a static binary and the CA bundle, no shell and no package
+  manager — running as uid 10001 on port 6360. `make pod-run` smoke-tests it
+  by querying the root DSE with upstream's own `ldapsearch`.
 - **Search limits work**, compared against slapd by `make golden-limits`:
   size, the request-versus-administrator minimum, the exactly-at-limit edge,
   and the `rootdn` bypass.
@@ -198,6 +202,11 @@ upstream behaviours that are easy to get wrong:
 - **The root DSE is base-scope only.** A one-level or subtree search from an
   empty base answers `noSuchObject`, so it is not the top of a walkable tree:
   a client enumerating the directory reads `namingContexts` and starts again.
+- **An explicitly named operational attribute is returned whatever its
+  usage.** slapd answers a request for `namingContexts` alone with
+  `namingContexts`, though a plain search withholds it. Honouring only `+`
+  leaves a client that asks by name with an empty entry — which is exactly what
+  upstream's `ldapsearch` does, and how the container smoke test found it.
 - **`rootdn` has no entry and bypasses access control.** That is what lets a
   directory be administered before it holds anything, and why `by * none` does
   not lock out the administrator.
@@ -471,7 +480,17 @@ are not "fixed" back by accident.
   Postgres listens on 15432 rather than 5432 so it cannot be confused with a
   real instance.
 - **Other projects on this machine run their own Postgres containers.**
-  `scripts/postgres-down.sh` removes only the container this project named.
+  `scripts/postgres-down.sh` removes only the container this project named,
+  and `scripts/pod-run.sh` stands up its own rather than touching the test
+  one.
+- **`make store`'s Postgres cannot join a bridge network.** Rootless Podman
+  defaults it to `pasta`, so `podman network connect` refuses it with
+  `"pasta" is not supported`, and its port is published to 127.0.0.1 where a
+  container cannot reach it. The container smoke test therefore runs its own
+  Postgres on its own network, which is closer to a real deployment anyway.
+- **An unprivileged container cannot bind a port below 1024.** The image
+  listens on 6360 and the host maps 636 to it — the same trap that made the
+  golden oracle fail at `ldaps:///`, which defaults to 636.
 - **GPG signing times out regularly** (a gnome3 pinentry issue, not a code
   problem). The fix is always to retry the identical `git commit` once the
   user has unlocked the key. Never use `--no-gpg-sign`.

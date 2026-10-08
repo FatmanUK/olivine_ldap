@@ -116,12 +116,18 @@ func addSuffixes(s *store.Store, suffixes []string) error {
 
 // loadSchema builds the schema registry.
 //
-// The built-in set from schema_init.c is always present. Extra
-// .schema files come from OLIVINE_SCHEMA_FILES, because dc, ou
-// and person live in core.schema rather than in the C — Olivine
-// does not embed a standard schema of its own yet.
+// The embedded standard set — what schema_init.c hardcodes plus
+// core, cosine and nis — so a server starts with no files to find.
+// The built-in set alone is not enough: dc, ou and person come
+// from core.schema, and a daemon loading only the hardcoded
+// definitions cannot even normalise its own suffix. The container
+// smoke test found that, because a scratch image has no .schema
+// files anywhere.
+//
+// OLIVINE_SCHEMA adds more on top, for a directory that needs a
+// schema Olivine does not ship.
 func loadSchema(c config) (*schema.Registry, error) {
-	reg, err := schema.NewDefaultRegistry()
+	reg, err := schema.NewStandardRegistry()
 	if err != nil {
 		return nil, err
 	}

@@ -92,6 +92,50 @@ func DataScripts() []Script {
 		rootDSEScopeScript(),
 		attributeUsageScript(),
 		modDNScript(),
+		rootDSEAttributesScript(),
+	}
+}
+
+// twoRootAttrs asks for two named operational attributes.
+func twoRootAttrs() []byte {
+	return searchBody("", ldap.ScopeBase,
+		presentFilter("objectClass"),
+		[]string{
+			"namingContexts",
+			"supportedLDAPVersion",
+		})
+}
+
+// rootDSEAttributesScript reads the root DSE three ways.
+//
+// The named-attribute case is the one that was broken: an
+// explicitly requested operational attribute comes back whatever
+// its usage, and honouring only "+" leaves a client that asks for
+// namingContexts by name with an empty entry. Upstream's own
+// ldapsearch does exactly that, which is how the container smoke
+// test found it.
+//
+// Only the attributes both implementations can agree on are
+// requested. slapd also advertises supportedControl,
+// supportedExtension, supportedFeatures and configContext;
+// Olivine implements none of those and will not claim to.
+func rootDSEAttributesScript() Script {
+	return Script{
+		Name: "rootdse-attributes",
+		Requests: []Request{
+			{Name: "plain", Op: ldap.ReqSearch,
+				Body: searchBody("", ldap.ScopeBase,
+					presentFilter("objectClass"),
+					nil)},
+			{Name: "namingContexts by name",
+				Op: ldap.ReqSearch,
+				Body: searchBody("", ldap.ScopeBase,
+					presentFilter("objectClass"),
+					[]string{"namingContexts"})},
+			{Name: "two by name",
+				Op:   ldap.ReqSearch,
+				Body: twoRootAttrs()},
+		},
 	}
 }
 
