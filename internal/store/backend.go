@@ -26,6 +26,9 @@ import (
 func (s *Store) BackendSearch(
 	req *ldap.SearchRequest, who Identity,
 ) ([]ldap.SearchEntry, ldap.Result) {
+	if isRootDSERequest(req) {
+		return s.searchRootDSE(req)
+	}
 	// The base must exist, scope notwithstanding: RFC 4511
 	// 4.5.3 gives noSuchObject when it does not, even for a
 	// subtree search that would otherwise return nothing.
@@ -45,6 +48,22 @@ func (s *Store) BackendSearch(
 		return nil, resultFor(err)
 	}
 	return s.collectEntries(entries, req, who),
+		ldap.Result{Code: ldap.Success}
+}
+
+// searchRootDSE answers a search of the empty DN.
+//
+// Base scope only: slapd gives noSuchObject for a one-level or
+// subtree search from "", so the root DSE is not the top of a
+// walkable tree. A client enumerating the directory has to read
+// namingContexts and start again from there.
+func (s *Store) searchRootDSE(
+	req *ldap.SearchRequest,
+) ([]ldap.SearchEntry, ldap.Result) {
+	if req.Scope != ldap.ScopeBase {
+		return nil, ldap.Result{Code: ldap.NoSuchObject}
+	}
+	return []ldap.SearchEntry{s.rootDSE(req)},
 		ldap.Result{Code: ldap.Success}
 }
 

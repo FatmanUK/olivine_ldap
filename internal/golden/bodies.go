@@ -131,3 +131,22 @@ func substringFilter(
 		e.End()
 	}
 }
+
+// modDNBody encodes a ModifyDNRequest body.
+func modDNBody(
+	entry, newRDN string, deleteOld bool,
+	newSuperior string,
+) []byte {
+	e := ber.NewEncoder()
+	e.String(ldap.TagLDAPDN, entry)
+	e.String(ber.TagOctetString, newRDN)
+	e.Bool(ber.TagBoolean, deleteOld)
+	if newSuperior != "" {
+		e.String(ldap.TagNewSuperior, newSuperior)
+	}
+	out, err := e.Bytes()
+	if err != nil {
+		panic(err)
+	}
+	return out
+}

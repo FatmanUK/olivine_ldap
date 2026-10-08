@@ -151,3 +151,39 @@ func TestBuiltinSuppliesCN(t *testing.T) {
 		t.Error("top missing from the built-in schema")
 	}
 }
+
+// The embedded standard schema must be enough on its own: the CI
+// checks out without submodules, so anything that reads
+// core.schema from disk skips there.
+func TestStandardSchemaIsSelfSufficient(t *testing.T) {
+	r, err := NewStandardRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// From schema_init.c.
+	for _, n := range []string{"cn", "objectClass", "name"} {
+		if _, ok := r.AttributeType(n); !ok {
+			t.Errorf("%s missing", n)
+		}
+	}
+	// From core.schema, which the built-in set lacks.
+	for _, n := range []string{"dc", "ou", "o", "sn"} {
+		if _, ok := r.AttributeType(n); !ok {
+			t.Errorf("%s missing", n)
+		}
+	}
+	// From cosine and nis.
+	for _, n := range []string{"uidNumber", "uid"} {
+		if _, ok := r.AttributeType(n); !ok {
+			t.Errorf("%s missing", n)
+		}
+	}
+	for _, n := range []string{
+		"top", "person", "organizationalUnit", "dcObject",
+		"extensibleObject",
+	} {
+		if _, ok := r.ObjectClass(n); !ok {
+			t.Errorf("objectClass %s missing", n)
+		}
+	}
+}

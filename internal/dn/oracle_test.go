@@ -3,8 +3,6 @@ package dn
 import (
 	"bufio"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -104,39 +102,18 @@ func readCorpus(t *testing.T) []oracleCase {
 	return out
 }
 
-// coreSchema loads the schema slapdn had: the built-in set
-// from schema_init.c plus core.schema.
+// coreSchema loads the schema Olivine ships with.
 //
-// Both are needed. core.schema comments out cn and name because
-// schema_init.c defines them in C, so core.schema alone cannot
-// resolve cn=admin — which is how the built-in set came to be
-// derived in the first place.
+// Embedded rather than read from the submodule, so this runs in CI
+// — which checks out without submodules. It is a superset of what
+// slapd had when the corpus was captured (core.schema), and none of
+// the extra definitions touches a case in it: the cases name cn,
+// dc, sn, an OID form and one deliberately unknown attribute.
 func coreSchema(t *testing.T) *schema.Registry {
 	t.Helper()
-	reg, err := schema.NewDefaultRegistry()
+	reg, err := schema.NewStandardRegistry()
 	if err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.Open(coreSchemaPath(t))
-	if err != nil {
-		t.Skip("openldap submodule not initialised")
-	}
-	defer f.Close()
-	if err := schema.LoadFile(reg, f); err != nil {
 		t.Fatal(err)
 	}
 	return reg
-}
-
-// coreSchemaPath locates core.schema in the submodule.
-func coreSchemaPath(t *testing.T) string {
-	t.Helper()
-	out, err := exec.Command("git", "rev-parse",
-		"--show-toplevel").Output()
-	if err != nil {
-		t.Skipf("not in a git checkout: %v", err)
-	}
-	root := strings.TrimSpace(string(out))
-	return filepath.Join(root, "openldap", "servers",
-		"slapd", "schema", "core.schema")
 }

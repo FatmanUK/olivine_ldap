@@ -21,10 +21,17 @@ var version = "dev"
 func main() {
 	showVersion := flag.Bool(
 		"version", false, "print version and exit")
+	hash := flag.String("hash", "",
+		"hash a password for OLIVINE_ROOT_PASSWORD_HASH "+
+			"and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("olivined %s\n", version)
+		return
+	}
+	if *hash != "" {
+		printHash(*hash)
 		return
 	}
 
@@ -58,6 +65,14 @@ Configuration comes from the environment:
   OLIVINE_ACL_FILE   access directives in slapd.conf syntax;
                      without it, read on everything, which is
                      what slapd defaults to
+  OLIVINE_ROOT_DN    administrative identity, as slapd's rootdn:
+                     it needs no entry and bypasses access
+                     control
+  OLIVINE_ROOT_PASSWORD_HASH
+                     its password, already hashed. Use
+                     "olivined -hash <password>" to make one; a
+                     plaintext credential in the environment is
+                     visible to ps and to a container inspect
 
 TLS is mandatory. There is no cleartext listener and no
 STARTTLS, so a missing certificate is a configuration error

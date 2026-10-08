@@ -28,6 +28,10 @@ type Store struct {
 	// policy is the access policy, nil for slapd's default of
 	// read on everything.
 	policy *acl.Policy
+	// rootDN and rootPassword are the administrative identity,
+	// which exists outside the database. See SetRootDN.
+	rootDN       string
+	rootPassword string
 }
 
 // New returns a Store over an open GORM connection.

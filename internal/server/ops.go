@@ -27,6 +27,8 @@ func (c *conn) operate(m *ldap.Message) bool {
 		return c.doModify(m)
 	case ldap.ReqCompare:
 		return c.doCompare(m)
+	case ldap.ReqModDN:
+		return c.doModDN(m)
 	}
 	return c.fail(m, ldap.Result{
 		Code:       ldap.UnwillingToPerform,

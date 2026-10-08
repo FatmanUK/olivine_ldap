@@ -89,6 +89,130 @@ func DataScripts() []Script {
 		caseExactScript(),
 		integerOrderingScript(),
 		anonymousAddScript(),
+		rootDSEScopeScript(),
+		attributeUsageScript(),
+		modDNScript(),
+	}
+}
+
+// modDNScript renames a leaf and then moves it back.
+//
+// Bound as the administrator, because an anonymous update is
+// refused before access control is even consulted. The rename is
+// undone so the fixture is unchanged for whatever runs next, and
+// so the script can run twice.
+func modDNScript() Script {
+	return Script{
+		Name: "moddn-rename-leaf",
+		Requests: append(
+			renameLeafSteps(), renameSubtreeSteps()...),
+	}
+}
+
+// renameLeafSteps renames a leaf and puts it back.
+//
+// The search between the two is the part that matters: slapd
+// *replaces* the RDN attribute value, so cn becomes Robert. An
+// implementation that moves only the DN leaves cn: Bob, and this
+// search finds nothing.
+func renameLeafSteps() []Request {
+	people := "ou=people," + baseDN
+	return []Request{
+		AdminBind(),
+		{Name: "rename Bob to Robert",
+			Op: ldap.ReqModDN,
+			Body: modDNBody("cn=Bob,"+people,
+				"cn=Robert", true, "")},
+		{Name: "search for Robert",
+			Op: ldap.ReqSearch,
+			Body: searchBody(baseDN,
+				ldap.ScopeSubtree,
+				equalityFilter("cn", "Robert"),
+				[]string{"cn"})},
+		{Name: "rename back",
+			Op: ldap.ReqModDN,
+			Body: modDNBody("cn=Robert,"+people,
+				"cn=Bob", true, "")},
+	}
+}
+
+// renameSubtreeSteps renames a non-leaf and puts it back.
+//
+// back-mdb renames a whole subtree, so this succeeds and every
+// descendant moves with it. The search afterwards is the check:
+// children left behind would be orphaned and the count would
+// drop. An earlier version refused a non-leaf outright, on an
+// assumption that upstream behaved like Delete.
+func renameSubtreeSteps() []Request {
+	humans := "ou=humans," + baseDN
+	return []Request{
+		{Name: "rename a non-leaf",
+			Op: ldap.ReqModDN,
+			Body: modDNBody("ou=people,"+baseDN,
+				"ou=humans", true, "")},
+		{Name: "children moved too",
+			Op: ldap.ReqSearch,
+			Body: searchBody(humans,
+				ldap.ScopeSubtree,
+				presentFilter("objectClass"),
+				[]string{"cn"})},
+		// Put it back, so the script is idempotent.
+		{Name: "rename the subtree back",
+			Op: ldap.ReqModDN,
+			Body: modDNBody(humans,
+				"ou=people", true, "")},
+	}
+}
+
+// rootDSEScopeScript checks that the root DSE is base-scope only.
+//
+// slapd answers noSuchObject for a one-level or subtree search
+// from an empty base, so the root DSE is not the top of a walkable
+// tree: a client enumerating the directory has to read
+// namingContexts and start again from there.
+func rootDSEScopeScript() Script {
+	return Script{
+		Name: "rootdse-scope",
+		Requests: []Request{
+			{Name: "sub from root",
+				Op: ldap.ReqSearch,
+				Body: searchBody("",
+					ldap.ScopeSubtree,
+					presentFilter("objectClass"),
+					nil)},
+			{Name: "one from root",
+				Op: ldap.ReqSearch,
+				Body: searchBody("",
+					ldap.ScopeOneLevel,
+					presentFilter("objectClass"),
+					nil)},
+		},
+	}
+}
+
+// attributeUsageScript checks the user/operational split.
+//
+// A plain search returns user attributes; "+" returns operational
+// ones and *only* those, which is why slapd's "+" output carries
+// no objectClass line (RFC 3673). Returning everything for both —
+// which Olivine did until this script — agreed with slapd only by
+// the accident of nothing operational being stored.
+func attributeUsageScript() Script {
+	alice := "cn=Alice,ou=people," + baseDN
+	return Script{
+		Name: "attribute-usage",
+		Requests: []Request{
+			{Name: "plain", Op: ldap.ReqSearch,
+				Body: searchBody(alice,
+					ldap.ScopeBase,
+					presentFilter("objectClass"),
+					nil)},
+			{Name: "star", Op: ldap.ReqSearch,
+				Body: searchBody(alice,
+					ldap.ScopeBase,
+					presentFilter("objectClass"),
+					[]string{"*"})},
+		},
 	}
 }
 

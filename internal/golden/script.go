@@ -22,6 +22,34 @@ type Request struct {
 	NoReply bool
 }
 
+// BindRequestBody encodes a simple bind, so a script can
+// authenticate before the operations that need it.
+//
+// Both implementations are given the same administrator, which
+// slapd calls rootdn: an identity with no entry that bypasses
+// access control. Without it an update cannot be compared at all,
+// since an anonymous one is refused before the ACLs are reached.
+func BindRequestBody(name, password string) []byte {
+	e := ber.NewEncoder()
+	e.Int32(ber.TagInteger, ldap.Version3)
+	e.String(ldap.TagLDAPDN, name)
+	e.String(ldap.AuthSimple, password)
+	out, err := e.Bytes()
+	if err != nil {
+		panic(err)
+	}
+	return out
+}
+
+// AdminBind is a request that binds as the shared administrator.
+func AdminBind() Request {
+	return Request{
+		Name: "bind as admin",
+		Op:   ldap.ReqBind,
+		Body: BindRequestBody(rootDN, rootPW),
+	}
+}
+
 // Script is a named sequence of requests.
 type Script struct {
 	Name     string

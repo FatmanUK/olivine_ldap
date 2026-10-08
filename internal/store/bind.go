@@ -41,6 +41,12 @@ func (s *Store) BackendBind(
 			Diagnostic: "unauthenticated bind rejected",
 		}
 	}
+	// The rootdn first: it has no entry to look up, which is
+	// what lets a directory be administered before it holds
+	// anything.
+	if id, res, isRoot := s.bindAsRoot(req); isRoot {
+		return id, res
+	}
 	return s.checkCredentials(req, who)
 }
 

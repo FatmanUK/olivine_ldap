@@ -55,6 +55,13 @@ func (a *Adapter) Modify(
 	return a.store.BackendModify(req, who)
 }
 
+// ModDN renames or moves an entry.
+func (a *Adapter) ModDN(
+	req *ldap.ModDNRequest, who ldap.Identity,
+) ldap.Result {
+	return a.store.BackendModDN(req, who)
+}
+
 // Compare tests one attribute value.
 func (a *Adapter) Compare(
 	req *ldap.CompareRequest, who ldap.Identity,

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -53,7 +54,27 @@ func openBackend(c config) (server.Backend, error) {
 	if err := applyPolicy(s, c); err != nil {
 		return nil, err
 	}
+	if err := applyRootDN(s, c); err != nil {
+		return nil, err
+	}
 	return store.NewAdapter(s), nil
+}
+
+// applyRootDN configures the administrative identity.
+//
+// The password is supplied already hashed, so a plaintext
+// credential never sits in the environment where `ps` and a
+// container inspect would show it. `olivined -hash` prints one.
+func applyRootDN(s *store.Store, c config) error {
+	if c.rootDN == "" {
+		return nil
+	}
+	if c.rootPassword == "" {
+		return errors.New(
+			"OLIVINE_ROOT_DN needs " +
+				"OLIVINE_ROOT_PASSWORD_HASH")
+	}
+	return s.SetRootDN(c.rootDN, c.rootPassword)
 }
 
 // applyPolicy loads the access directives, if any.

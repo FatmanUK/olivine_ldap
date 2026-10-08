@@ -10,10 +10,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// dsnEnv names the environment variable holding the test
-// connection string.
-const dsnEnv = "OLIVINE_TEST_DSN"
-
 // testStore returns a Store over a throwaway schema.
 //
 // The scratch schema goes in the *connection string*, never a
@@ -24,10 +20,11 @@ const dsnEnv = "OLIVINE_TEST_DSN"
 // blood.
 func testStore(t *testing.T) *Store {
 	t.Helper()
-	dsn := os.Getenv(dsnEnv)
+	dsn := testDSN()
 	if dsn == "" {
-		t.Skipf("%s not set; see internal/store/README",
-			dsnEnv)
+		t.Skipf("neither %s nor %s is set; see "+
+			"internal/store/README",
+			envTestURL, envTestDSN)
 	}
 	name := scratchSchema(t, dsn)
 	db := openScratch(t, dsn, name)
@@ -77,14 +74,23 @@ func scratchSchema(t *testing.T, dsn string) string {
 	return name
 }
 
+// testDSN returns the test connection string, preferring the
+// CI's variable.
+func testDSN() string {
+	if dsn := os.Getenv(envTestURL); dsn != "" {
+		return dsn
+	}
+	return os.Getenv(envTestDSN)
+}
+
 // openScratch connects with the scratch schema named in the
 // connection string.
 func openScratch(
 	t *testing.T, dsn, name string,
 ) *gorm.DB {
 	t.Helper()
-	scoped := fmt.Sprintf("%s search_path=%s", dsn, name)
-	db, err := gorm.Open(postgres.Open(scoped),
+	db, err := gorm.Open(
+		postgres.Open(withSearchPath(dsn, name)),
 		&gorm.Config{
 			Logger:                 logger.Discard,
 			TranslateError:         true,

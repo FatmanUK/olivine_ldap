@@ -28,6 +28,7 @@ type fakeBackend struct {
 	deleteCalls  []string
 	modifyCalls  []*ldap.ModifyRequest
 	compareCalls []*ldap.CompareRequest
+	modDNCalls   []*ldap.ModDNRequest
 }
 
 // newFake returns a backend that succeeds at everything.
@@ -87,6 +88,14 @@ func (f *fakeBackend) Compare(
 	r *ldap.CompareRequest, who ldap.Identity,
 ) ldap.Result {
 	f.compareCalls = append(f.compareCalls, r)
+	f.identities = append(f.identities, who)
+	return f.result
+}
+
+func (f *fakeBackend) ModDN(
+	r *ldap.ModDNRequest, who ldap.Identity,
+) ldap.Result {
+	f.modDNCalls = append(f.modDNCalls, r)
 	f.identities = append(f.identities, who)
 	return f.result
 }

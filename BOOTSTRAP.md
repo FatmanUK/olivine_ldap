@@ -55,8 +55,15 @@ that have aged worst in the C:
   parsed by `internal/acl`. Levels, the disclose switch, per-attribute
   selection, `self`/`users`/`anonymous`/`dn=` subjects and `dn.subtree=`
   scoping all agree.
-- Not implemented: modrdn, the root DSE, abandon's actual effect, SASL,
-  paged results, and the ACL features listed in §3.3.
+- **modrdn, the root DSE and `rootdn` work**, all three golden-verified.
+  Subtree rename included: `back-mdb` renames a whole subtree and so does
+  this.
+- **The standard schema is embedded**, derived from slapd's own
+  `cn=Subschema` by `scripts/derive-standard.sh`. A Go-only binary resolves
+  `dc`, `ou` and `person` with no submodule, which is what lets the CI — which
+  checks out without submodules — actually run the store tests.
+- Not implemented: abandon's actual effect, SASL, paged results, controls,
+  limits, and the ACL features listed in §3.3.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
@@ -109,12 +116,9 @@ authoritative for sequencing. In brief:
 6. ~~Schema subsystem.~~ Done — parsing, the registry, checking, and the
    matching rules and syntax validators.
 7. ~~DN handling and the Postgres store.~~ Done — this commit.
-8. **Operations** — mostly done, this commit. Bind, search, add, modify,
-   delete and compare are wired and golden-verified. Outstanding: **schema
-   checking** (slapd refuses an entry whose objectClass is undefined; Olivine
-   accepts it), modrdn, the root DSE, abandon's effect, paged results, and
-   the matching-rule semantics from step 6's second half that proper
-   ordering and substring matching need.
+8. ~~Operations.~~ Bind, search, add, modify, delete, compare, modrdn and the
+   root DSE are wired, schema-checked and golden-verified. Abandon's effect
+   and paged results remain, with SASL still an open question.
 8. **Operations** — bind, search, add/modify/delete/modrdn, compare,
    abandon, root DSE. This is what unblocks most of the 113 upstream test
    scripts as harness corpus.
@@ -161,6 +165,26 @@ upstream behaviours that are easy to get wrong:
   `ldap.h:522-548` states every operation that way — `LDAP_REQ_BIND` is
   `0x60`. A decoded form would need re-packing at every comparison.
 - **`ber_put_boolean` writes `0xff` for true**, not `0x01`.
+- **`back-mdb` renames a whole subtree.** Renaming `ou=people` with children
+  beneath it answers success, not `notAllowedOnNonLeaf`. Delete refuses a
+  non-leaf; ModDN does not, and assuming the two behave alike is wrong.
+- **modrdn replaces the RDN attribute value.** Renaming `cn=Alice` to
+  `cn=Alicia` leaves the entry carrying `cn: Alicia`. Moving only the DN
+  leaves an entry whose `cn` disagrees with its own name, and a search for the
+  new name finds nothing. With `deleteoldrdn` false the entry keeps both.
+- **A renamed descendant keeps its own spelling.** Only the moved suffix
+  changes, so `cn=Alice,ou=people` becomes `cn=Alice,ou=humans` — rebuilding
+  the pretty DN from the normal form gives `cn=alice` and differs.
+- **`+` returns operational attributes and only those** (RFC 3673), which is
+  why slapd's `+` output carries no `objectClass` line. A plain search or `*`
+  returns user attributes. Returning everything for both agrees with slapd
+  only while nothing operational is stored.
+- **The root DSE is base-scope only.** A one-level or subtree search from an
+  empty base answers `noSuchObject`, so it is not the top of a walkable tree:
+  a client enumerating the directory reads `namingContexts` and starts again.
+- **`rootdn` has no entry and bypasses access control.** That is what lets a
+  directory be administered before it holds anything, and why `by * none` does
+  not lock out the administrator.
 - **Default access is read** when no `access to` clause matches at all
   (`frontend.c:99`, `be_dfltaccess = ACL_READ`), which is why anonymous
   searches work against a slapd with no ACL configuration.
@@ -455,6 +479,13 @@ the DN code need nothing outside the standard library.
 
 Podman (rootless), for the deployment containers and for the golden oracle
 built from `openldap/`. Verified with Podman 5.8.3.
+
+**The submodule is not needed to build, test or run.** The standard schema is
+embedded (`scripts/derive-standard.sh`), so a Go-only checkout passes the whole
+default suite — which is what the CI relies on, since its workflows check out
+with `submodules: false`. Only the golden harness and
+`internal/schema/file_test.go` read `openldap/`, and the latter skips when it
+is absent.
 
 Two rootless-Podman traps the oracle hit, both of which present as "slapd
 exited and said nothing":

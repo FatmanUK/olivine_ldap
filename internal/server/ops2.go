@@ -42,3 +42,13 @@ func (c *conn) doCompare(m *ldap.Message) bool {
 	return c.fail(m,
 		c.srv.backend.Compare(req, c.identity()))
 }
+
+// doModDN renames or moves an entry.
+func (c *conn) doModDN(m *ldap.Message) bool {
+	req, err := ldap.ParseModDNRequest(m.Body)
+	if err != nil {
+		return c.protocolError(m, err)
+	}
+	return c.fail(m,
+		c.srv.backend.ModDN(req, c.identity()))
+}

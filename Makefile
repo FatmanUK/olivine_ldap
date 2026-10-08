@@ -8,9 +8,9 @@ VERSION := $(shell git describe --tags --always --dirty \
 	2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-.PHONY: all build test race store postgres-down lint fmt vet \
-	style golden golden-data golden-acl golden-build \
-	clean help
+.PHONY: all build test race store postgres-down lint fmt \
+	fmt-check vet style width-check golden golden-data \
+	golden-acl golden-build clean help
 
 all: lint test build
 
@@ -46,9 +46,10 @@ postgres-down:
 	@./scripts/postgres-down.sh
 
 ## lint: gofmt, go vet and the project style invariants
-lint: fmt vet style
+lint: fmt-check vet width-check
 
-fmt:
+## fmt-check: fail if anything is not gofmt-clean
+fmt-check:
 	@out=$$(gofmt -l $$(git ls-files --cached --others \
 		--exclude-standard '*.go' | grep -v '^openldap/') \
 		2>/dev/null); \
@@ -59,9 +60,14 @@ fmt:
 vet:
 	$(GO) vet ./...
 
-## style: 70 columns, functions at most 40 lines
-style:
+## width-check: 70 columns, functions at most 40 lines
+width-check:
 	@./scripts/check-style.sh
+
+# Kept as the names used before the CI settled on fmt-check and
+# width-check.
+fmt: fmt-check
+style: width-check
 
 ## golden-build: build the C oracle container from openldap/
 golden-build:

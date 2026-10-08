@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-//go:embed builtin.ldif
+//go:embed builtin.ldif standard.ldif
 var builtinFS embed.FS
 
 // Builtin registers the schema slapd hardcodes in
@@ -36,6 +36,35 @@ func Builtin(r *Registry) error {
 func NewDefaultRegistry() (*Registry, error) {
 	r := NewRegistry()
 	if err := Builtin(r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// Standard registers everything Olivine ships with: the
+// definitions schema_init.c hardcodes plus core, cosine and nis.
+//
+// Embedded rather than read from the submodule, so a Go-only
+// binary can resolve dc, ou and person on its own. The CI checks
+// out without submodules and a deployed container has no business
+// carrying one, so a server that needed the .schema files to
+// start would be awkward in both places.
+//
+// Derived by scripts/derive-standard.sh from slapd's own
+// cn=Subschema, so it cannot drift from the upstream it came from.
+func Standard(r *Registry) error {
+	data, err := builtinFS.ReadFile("standard.ldif")
+	if err != nil {
+		return err
+	}
+	return loadBuiltin(r, string(data))
+}
+
+// NewStandardRegistry returns a Registry holding the standard
+// schema.
+func NewStandardRegistry() (*Registry, error) {
+	r := NewRegistry()
+	if err := Standard(r); err != nil {
 		return nil, err
 	}
 	return r, nil

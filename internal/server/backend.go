@@ -44,6 +44,9 @@ type Backend interface {
 	Delete(dn string, who ldap.Identity) ldap.Result
 	Modify(*ldap.ModifyRequest, ldap.Identity) ldap.Result
 
+	// ModDN renames or moves an entry.
+	ModDN(*ldap.ModDNRequest, ldap.Identity) ldap.Result
+
 	// Compare answers compareTrue or compareFalse, which are
 	// both successes: a compare that answers is not a compare
 	// that failed.

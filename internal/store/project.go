@@ -25,7 +25,7 @@ func (s *Store) project(
 	byType := map[string][]string{}
 	var order []string
 	for _, v := range e.Values {
-		if wanted != nil && !wanted[v.Type] {
+		if !s.wantedAttribute(req, wanted, v.Type) {
 			continue
 		}
 		// Per attribute, because selection is per attribute:
@@ -70,6 +70,31 @@ func (s *Store) declaredName(stored string) string {
 	return canonicalName(at)
 }
 
+// wantedAttribute reports whether one stored attribute belongs
+// in the reply.
+//
+// An explicit list selects exactly what it names. Otherwise the
+// split is by usage: a plain search or "*" returns user
+// attributes, and "+" returns operational ones — and only those.
+// slapd's "+" output carries no objectClass line, which is the
+// observable consequence.
+func (s *Store) wantedAttribute(
+	req *ldap.SearchRequest, wanted map[string]bool,
+	typ string,
+) bool {
+	if wanted != nil {
+		return wanted[typ]
+	}
+	at, ok := s.schema.AttributeType(typ)
+	if !ok {
+		return false
+	}
+	if isOperational(at) {
+		return wantsOperational(req.Attributes)
+	}
+	return wantsUser(req.Attributes)
+}
+
 // onlyNoAttributes reports whether the list is exactly the
 // "no attributes" marker.
 func onlyNoAttributes(attrs []string) bool {
@@ -89,9 +114,9 @@ func (s *Store) wantedTypes(
 		switch a {
 		case ldap.AllUserAttributes,
 			ldap.AllOperationalAttributes:
-			// Operational attributes are not stored
-			// apart yet, so "+" selects nothing extra
-			// rather than pretend otherwise.
+			// A wildcard is present, so selection falls
+			// to the usage split in wantedAttribute,
+			// not to an explicit set.
 			return nil
 		case ldap.NoAttributes:
 			continue

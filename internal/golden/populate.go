@@ -3,7 +3,6 @@ package golden
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"gorm.io/driver/postgres"
@@ -141,6 +140,16 @@ func OpenStore() (*store.Store, error) {
 	if err := s.AddSuffix(baseDN); err != nil {
 		return nil, err
 	}
+	// The same administrator the oracle's slapd.conf declares,
+	// so a script can bind as it on both sides. slapd's rootdn
+	// has no entry; neither does Olivine's.
+	hashed, err := store.HashPassword(rootPW)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.SetRootDN(rootDN, hashed); err != nil {
+		return nil, err
+	}
 	return s, seed(s)
 }
 
@@ -160,41 +169,14 @@ func seed(s *store.Store) error {
 	return nil
 }
 
-// harnessSchema is the built-in set plus core.schema, matching
-// what the oracle loads.
+// harnessSchema is the schema Olivine ships with.
+//
+// The embedded set is derived from slapd's own cn=Subschema for
+// exactly the files the oracle's slapd.conf includes — core,
+// cosine and nis — so the two sides start from the same schema
+// without this reading the submodule.
 func harnessSchema() (*schema.Registry, error) {
-	reg, err := schema.NewDefaultRegistry()
-	if err != nil {
-		return nil, err
-	}
-	root, err := repoRoot()
-	if err != nil {
-		return nil, err
-	}
-	dir := filepath.Join(root, "openldap", "servers",
-		"slapd", "schema")
-	// The same set the oracle's slapd.conf includes, in the
-	// same order: nis.schema depends on cosine.schema.
-	for _, name := range []string{
-		"core.schema", "cosine.schema", "nis.schema",
-	} {
-		if err := loadSchemaFile(reg, dir, name); err != nil {
-			return nil, err
-		}
-	}
-	return reg, nil
-}
-
-// loadSchemaFile reads one .schema file into reg.
-func loadSchemaFile(
-	reg *schema.Registry, dir, name string,
-) error {
-	f, err := os.Open(filepath.Join(dir, name))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return schema.LoadFile(reg, f)
+	return schema.NewStandardRegistry()
 }
 
 // openGolden connects to a scratch schema named for the harness.

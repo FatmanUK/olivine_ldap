@@ -3,10 +3,12 @@ package main
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 
 	"github.com/FatmanUK/openldap_olivine/internal/server"
+	"github.com/FatmanUK/openldap_olivine/internal/store"
 )
 
 // config is the daemon's whole configuration.
@@ -27,6 +29,11 @@ type config struct {
 	// aclFile holds access directives in slapd.conf syntax.
 	// Empty means slapd's default of read on everything.
 	aclFile string
+	// rootDN and rootPassword are the administrative identity,
+	// as slapd's rootdn and rootpw. The password is a hash in
+	// the same format userPassword uses.
+	rootDN       string
+	rootPassword string
 }
 
 // defaultAddr is the ldaps port. There is no 389 listener:
@@ -46,6 +53,9 @@ func configFromEnv() (config, error) {
 		suffixes:    splitList(os.Getenv("OLIVINE_SUFFIX")),
 		schemaFiles: splitList(os.Getenv("OLIVINE_SCHEMA")),
 		aclFile:     os.Getenv("OLIVINE_ACL_FILE"),
+		rootDN:      os.Getenv("OLIVINE_ROOT_DN"),
+		rootPassword: os.Getenv(
+			"OLIVINE_ROOT_PASSWORD_HASH"),
 	}
 	if c.addr == "" {
 		c.addr = defaultAddr
@@ -82,4 +92,17 @@ func run(c config) error {
 	}
 	log.Printf("olivined listening on %s", s.Addr())
 	return s.Serve()
+}
+
+// printHash writes an Argon2id hash for a password.
+//
+// Separate from the server so an operator can produce a value for
+// OLIVINE_ROOT_PASSWORD_HASH without a running directory, which is
+// slappasswd's job upstream.
+func printHash(password string) {
+	hashed, err := store.HashPassword(password)
+	if err != nil {
+		log.Fatalf("olivined: hashing: %v", err)
+	}
+	fmt.Println(hashed)
 }

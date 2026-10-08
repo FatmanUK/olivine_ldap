@@ -27,9 +27,16 @@ func (s *Store) policyOrDefault() *acl.Policy {
 type Identity = ldap.Identity
 
 // accessTo reports the level the asker has for one attribute.
+//
+// The administrator bypasses the policy entirely, as slapd's
+// rootdn does: that is why a policy of `by * none` locks out
+// every user and not the administrator.
 func (s *Store) accessTo(
 	who Identity, targetDN, attribute string,
 ) acl.Level {
+	if s.isRoot(who) {
+		return rootLevel
+	}
 	return s.policyOrDefault().Level(acl.Request{
 		TargetDN:  targetDN,
 		Attribute: attribute,
