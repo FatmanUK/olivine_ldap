@@ -113,6 +113,22 @@ are not "fixed" back by accident.
 **Compatibility choices:**
 
 - **TLS only** — no cleartext, no STARTTLS.
+- **syncrepl is not ported.** `servers/slapd/syncrepl.c` is 8,083 lines of
+  slapd-to-slapd replication, and replication is Postgres's job here — that
+  is the whole point of the database departure. The RFC 4533 Sync controls
+  are answered `unavailableCriticalExtension`.
+
+  This costs almost nothing on the client side, which is why it is safe.
+  `ldapsearch` initialises `ldapsync = 0` (`clients/tools/ldapsearch.c:244`)
+  and only sets it from `-E sync=ro|rp` (`:580-626`); the control is built
+  only inside `if ( ldapsync )` (`:1221`). Plain `ldapsearch` never puts a
+  Sync control on the wire. The whole cost of this decision is that
+  `ldapsearch -E sync=...` stops working, and that is a replication-
+  debugging invocation.
+
+  Keep the `entryCSN` and `contextCSN` *attribute definitions* in the schema
+  even so — a client asking for `+` operational attributes may expect them
+  to exist — but do not maintain their values.
 - **Argon2id passwords** by default, with legacy algorithms read but not
   written. This is a divergence in *default*, not in format: upstream already
   ships argon2 as an optional loadable module at

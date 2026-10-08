@@ -9,4 +9,10 @@
 // unwillingToPerform rather than met with silence or a parse
 // error. Confirm the exact code and diagnostic against the C
 // before implementing it.
+//
+// The RFC 4533 Sync controls are likewise recognised and
+// refused, with unavailableCriticalExtension: syncrepl.c is
+// not ported, because replication is Postgres's job. See
+// BOOTSTRAP.md 3.3 for why that costs only
+// "ldapsearch -E sync=...".
 package ldap
