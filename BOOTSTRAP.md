@@ -24,13 +24,14 @@ that have aged worst in the C:
 
 ### Where it stands
 
-- **Skeleton standing, no protocol code.** `go.mod`, a `Makefile` whose
-  targets are the contract, the package layout under `internal/`, and
-  `cmd/olivined`. Every package is a `doc.go` stating what it is ported
-  from; none has an implementation.
-- `make lint`, `make test` and `make build` all pass. The binary builds and
-  answers `-version`; invoked as a server it reports that it is not
-  implemented and exits 1.
+- **`internal/ber` is implemented and tested.** Decoder, encoder and a
+  framing reader; 64 tests, 83.9% statement coverage, three fuzz targets run
+  for ~17M executions with no panics, plus an independent cross-check against
+  `encoding/asn1` for the subset where BER and DER agree.
+- Every other package is still a `doc.go` stating what it is ported from.
+- `make lint`, `make test` and `make build` all pass. The binary answers
+  `-version`; invoked as a server it reports that it is not implemented and
+  exits 1.
 - `make golden` and `make golden-build` exist and fail deliberately,
   pointing at plan step 5.
 - Host toolchain: Go 1.26.5, Podman 5.8.3.
@@ -45,14 +46,15 @@ The plan is `~/.claude/plans/a-green-stone-in-the-socket.md`, and it is
 authoritative for sequencing. In brief:
 
 1. ~~Reconcile the documentation with reality.~~ Done, `db5fd8e`.
-2. ~~Repository skeleton.~~ Done — this commit.
-3. **The BER codec, `internal/ber`**, ported from
-   `libraries/liblber/{decode,encode,io}.c`. Everything sits on it, so it
-   goes first. Table-driven round-trips plus a fuzz target on the decoder:
-   a malformed-length panic there is a remote crash later, and under
-   crash-only architecture a panic is a restart.
-4. **TLS listener and connection lifecycle**, matching the dispatch at
+2. ~~Repository skeleton.~~ Done, `f0bf73e`.
+3. ~~The BER codec, `internal/ber`.~~ Done, `b078080`.
+4. **The protocol layer and the TLS listener.** `internal/ldap` for the
+   RFC 4511 messages and result codes, then `internal/server` for the
+   listener and the operation lifecycle, matching the dispatch at
    `connection.c:1080-1089`.
+5. **The golden harness, `internal/golden`** — deliberately before schema
+   and the operations, so everything after it is verified rather than
+   reasoned about.
 
 The plan carries the ordering beyond that, and three open questions —
 whether `syncrepl.c` is ported at all, whether `cn=config` becomes a
@@ -63,8 +65,8 @@ bind over TLS — each tagged with the step it blocks.
 
 ### 3.1 Key Logic
 
-No code yet. Two decisions already taken about the BER layer, because they
-determine its shape:
+`internal/ber` is the only implemented package. Its departures, and the
+upstream behaviours that are easy to get wrong:
 
 - **The resumable reader is not ported.**
   `libraries/liblber/io.c:473` carries a comment explaining that
@@ -73,10 +75,29 @@ determine its shape:
   multiplexes connections over a poll loop. A goroutine per connection blocks
   on `io.ReadFull` instead, and the resumption state is dead weight. This is
   the first place the Go will look wrong to someone reading the C.
-- **`ber_printf`/`ber_scanf` are not reimplemented.** The variadic format
-  language is replaced by typed encode/decode against the message structs.
-  Confirm against `encode.c` that no on-the-wire behaviour hides in the
-  format layer before discarding it.
+- **`ber_printf`/`ber_scanf` are not reimplemented.** Checked, and the
+  format layer hides nothing: `encode.c`'s dispatcher is a pure switch in
+  which every case calls a typed `ber_put_*` directly, with only `'t'` (tag
+  override) and `'!'` (hook) carrying state. The tag is a parameter instead.
+- **`ber_int_t` is int32, not int64.** `configure:25130-25140` resolves
+  `LBER_INT_T` to `int` whenever `int` is at least 32 bits, falling back to
+  `long` only otherwise — so integer contents over four octets are a parse
+  error, and `MessageID` is int32, matching RFC 4511's `maxInt`. Reading
+  `unsigned long` elsewhere in `lber_types.hin` and concluding 64-bit would
+  have accepted messages upstream rejects.
+- **Three upstream laxities are matched on purpose**, each with a test
+  saying so: a zero-length integer decodes to 0 rather than failing, as does
+  a non-minimal one; and non-minimal long-form lengths are accepted, so
+  `0x81 0x05` and a bare `0x05` both mean five. Being stricter than upstream
+  is still a divergence.
+- **A zero-length *top-level* element is rejected** (`io.c:613-616`,
+  ERANGE), though a zero-length element nested inside one is legal. The
+  asymmetry belongs to the framing layer, so `ReadPacket` carries it and the
+  `Decoder` does not.
+- **Tags are packed raw octets**, not a decoded class/number pair, because
+  `ldap.h:522-548` states every operation that way — `LDAP_REQ_BIND` is
+  `0x60`. A decoded form would need re-packing at every comparison.
+- **`ber_put_boolean` writes `0xff` for true**, not `0x01`.
 
 ### 3.2 Architecture
 
@@ -192,6 +213,9 @@ The newest entry is the commit before HEAD.
 
 | Commit | Summary |
 |---|---|
+| `b078080` | Add `internal/ber`, the BER codec everything rests on |
+| `81abfd1` | Settle replication: syncrepl not ported, Postgres replicates |
+| `f0bf73e` | Stand up the repository skeleton |
 | `db5fd8e` | Reconcile the docs with the actual repository state |
 | `cceb99c` | Add CLAUDE.md and BOOTSTRAP.md |
 | `1577993` | Add openldap submodule |
@@ -202,17 +226,27 @@ into `mother`; they are read-only reference.
 
 ## 6. Testing Status
 
-No Go tests yet — `make test` reports "no test files" for all eight
-packages, which is the honest result and not a passing suite. What *is*
-verified is the toolchain: `make lint`, `make test` and `make build` pass,
-and `scripts/check-style.sh` was checked against a deliberately bad file to
-confirm it fails on both an 87-column line and a 42-line function. A style
-checker that cannot fail is worse than none.
+`internal/ber`: 64 tests, 83.9% statement coverage. Three fuzz targets —
+`FuzzDecoder`, `FuzzReadPacket`, `FuzzRoundTrip` — run for roughly 17 million
+executions in total with no panics. A malformed-length panic in the decoder
+is a remote crash later, and under crash-only architecture a panic is a
+restart, so the fuzzers are run rather than merely compiled.
 
-The first real tests arrive with `internal/ber` (plan step 3): table-driven
-round-trips plus a fuzz target on the decoder. A malformed-length panic in
-the decoder is a remote crash later, and under crash-only architecture a
-panic is a restart.
+`encoding/asn1` serves as an independent oracle for the subset where BER and
+DER agree, standing in until the golden harness lands at step 5. One trap
+worth knowing: `encoding/asn1` maps a Go `string` to PrintableString (tag
+19), whereas an `LDAPString` is an OCTET STRING (tag 4), so a cross-check
+written with `string` compares the wrong tag and fails against correct
+output. Use `[]byte`.
+
+Every other package has no tests, because it has no code. `make test`
+reports "no test files" for those, which is the honest result and not a
+passing suite.
+
+The toolchain itself is verified: `scripts/check-style.sh` was checked
+against a deliberately bad file to confirm it fails on both an 87-column
+line and a 42-line function. A style checker that cannot fail is worse than
+none.
 
 The golden harness (plan step 5) is deliberately sequenced before schema and
 the operations, so that everything from that point on is verified against the
