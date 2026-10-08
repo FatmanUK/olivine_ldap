@@ -24,6 +24,9 @@ type config struct {
 	// schemaFiles are extra .schema files to load beyond the
 	// built-in set.
 	schemaFiles []string
+	// aclFile holds access directives in slapd.conf syntax.
+	// Empty means slapd's default of read on everything.
+	aclFile string
 }
 
 // defaultAddr is the ldaps port. There is no 389 listener:
@@ -42,6 +45,7 @@ func configFromEnv() (config, error) {
 		dsn:         os.Getenv("OLIVINE_DSN"),
 		suffixes:    splitList(os.Getenv("OLIVINE_SUFFIX")),
 		schemaFiles: splitList(os.Getenv("OLIVINE_SCHEMA")),
+		aclFile:     os.Getenv("OLIVINE_ACL_FILE"),
 	}
 	if c.addr == "" {
 		c.addr = defaultAddr

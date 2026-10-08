@@ -8,7 +8,8 @@ func (c *conn) doAdd(m *ldap.Message) bool {
 	if err != nil {
 		return c.protocolError(m, err)
 	}
-	return c.fail(m, c.srv.backend.Add(req))
+	return c.fail(m,
+		c.srv.backend.Add(req, c.identity()))
 }
 
 // doDelete removes an entry.
@@ -18,7 +19,8 @@ func (c *conn) doAdd(m *ldap.Message) bool {
 // is why ReqDelete is a primitive tag (0x4a) where most requests
 // are constructed.
 func (c *conn) doDelete(m *ldap.Message) bool {
-	return c.fail(m, c.srv.backend.Delete(string(m.Body)))
+	return c.fail(m, c.srv.backend.Delete(
+		string(m.Body), c.identity()))
 }
 
 // doModify applies modifications.
@@ -27,7 +29,8 @@ func (c *conn) doModify(m *ldap.Message) bool {
 	if err != nil {
 		return c.protocolError(m, err)
 	}
-	return c.fail(m, c.srv.backend.Modify(req))
+	return c.fail(m,
+		c.srv.backend.Modify(req, c.identity()))
 }
 
 // doCompare tests one attribute value.
@@ -36,5 +39,6 @@ func (c *conn) doCompare(m *ldap.Message) bool {
 	if err != nil {
 		return c.protocolError(m, err)
 	}
-	return c.fail(m, c.srv.backend.Compare(req))
+	return c.fail(m,
+		c.srv.backend.Compare(req, c.identity()))
 }

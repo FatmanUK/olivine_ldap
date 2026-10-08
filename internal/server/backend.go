@@ -17,21 +17,37 @@ import "github.com/FatmanUK/openldap_olivine/internal/ldap"
 type Backend interface {
 	// Bind authenticates. A Result of Success means the
 	// identity in the request is now the connection's.
-	Bind(*ldap.BindRequest) ldap.Result
+	//
+	// The Identity passed in is the one in force *before* this
+	// bind, which is usually anonymous. Access control needs
+	// it: auth on userPassword is checked as the requester the
+	// connection currently is, not as the one it is trying to
+	// become.
+	//
+	// The Identity returned is the one the connection now has,
+	// and its DN is *normalised*. The backend has to supply it
+	// because only it has the schema: a client may spell its
+	// DN however it likes, and comparing an unnormalised DN
+	// against stored entries makes `self` and `dn=` clauses
+	// silently never match. slapd keeps o_ndn for the same
+	// reason.
+	Bind(*ldap.BindRequest, ldap.Identity) (
+		ldap.Identity, ldap.Result)
 
 	// Search returns the matching entries. Entries are sent
 	// before the result, so a non-Success Result with entries
 	// already returned is still reported after them.
-	Search(*ldap.SearchRequest) ([]ldap.SearchEntry, ldap.Result)
+	Search(*ldap.SearchRequest, ldap.Identity) (
+		[]ldap.SearchEntry, ldap.Result)
 
-	Add(*ldap.AddRequest) ldap.Result
-	Delete(dn string) ldap.Result
-	Modify(*ldap.ModifyRequest) ldap.Result
+	Add(*ldap.AddRequest, ldap.Identity) ldap.Result
+	Delete(dn string, who ldap.Identity) ldap.Result
+	Modify(*ldap.ModifyRequest, ldap.Identity) ldap.Result
 
 	// Compare answers compareTrue or compareFalse, which are
 	// both successes: a compare that answers is not a compare
 	// that failed.
-	Compare(*ldap.CompareRequest) ldap.Result
+	Compare(*ldap.CompareRequest, ldap.Identity) ldap.Result
 
 	// Suffixes are the naming contexts, for the root DSE.
 	Suffixes() []string

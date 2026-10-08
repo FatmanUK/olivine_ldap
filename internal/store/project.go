@@ -3,6 +3,7 @@ package store
 import (
 	"sort"
 
+	"github.com/FatmanUK/openldap_olivine/internal/acl"
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
 )
 
@@ -14,7 +15,7 @@ import (
 // explicitly, and "1.1" — which is not a real OID — means none
 // at all. "+" for operational attributes is RFC 3673.
 func (s *Store) project(
-	e *Entry, req *ldap.SearchRequest,
+	e *Entry, req *ldap.SearchRequest, who Identity,
 ) ldap.SearchEntry {
 	out := ldap.SearchEntry{DN: e.PrettyDN}
 	if onlyNoAttributes(req.Attributes) {
@@ -25,6 +26,12 @@ func (s *Store) project(
 	var order []string
 	for _, v := range e.Values {
 		if wanted != nil && !wanted[v.Type] {
+			continue
+		}
+		// Per attribute, because selection is per attribute:
+		// one clause can hide description while a later one
+		// grants the rest.
+		if s.accessTo(who, e.DN, v.Type) < acl.Read {
 			continue
 		}
 		if _, seen := byType[v.Type]; !seen {

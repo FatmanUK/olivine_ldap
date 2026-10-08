@@ -46,10 +46,14 @@ directory /data
 const schemaDir = "/opt/openldap/etc/openldap/schema"
 
 // writeOracleConfig writes slapd.conf and a fresh key pair.
-func writeOracleConfig(dir string) error {
+//
+// extra is appended to the configuration, which is how the access
+// comparison installs the same policy on both sides.
+func writeOracleConfig(dir, extra string) error {
 	conf := filepath.Join(dir, "slapd.conf")
+	text := slapdConf + extra + "\n"
 	if err := os.WriteFile(
-		conf, []byte(slapdConf), 0o644); err != nil {
+		conf, []byte(text), 0o644); err != nil {
 		return err
 	}
 	return writeKeyPair(dir)

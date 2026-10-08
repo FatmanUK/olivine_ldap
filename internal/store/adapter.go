@@ -22,40 +22,44 @@ func NewAdapter(s *Store) *Adapter {
 
 // Bind authenticates.
 func (a *Adapter) Bind(
-	req *ldap.BindRequest,
-) ldap.Result {
-	return a.store.BackendBind(req)
+	req *ldap.BindRequest, who ldap.Identity,
+) (ldap.Identity, ldap.Result) {
+	return a.store.BackendBind(req, who)
 }
 
 // Search returns the matching entries.
 func (a *Adapter) Search(
-	req *ldap.SearchRequest,
+	req *ldap.SearchRequest, who ldap.Identity,
 ) ([]ldap.SearchEntry, ldap.Result) {
-	return a.store.BackendSearch(req)
+	return a.store.BackendSearch(req, who)
 }
 
 // Add creates an entry.
-func (a *Adapter) Add(req *ldap.AddRequest) ldap.Result {
-	return a.store.BackendAdd(req)
+func (a *Adapter) Add(
+	req *ldap.AddRequest, who ldap.Identity,
+) ldap.Result {
+	return a.store.BackendAdd(req, who)
 }
 
 // Delete removes an entry.
-func (a *Adapter) Delete(rawDN string) ldap.Result {
-	return a.store.BackendDelete(rawDN)
+func (a *Adapter) Delete(
+	rawDN string, who ldap.Identity,
+) ldap.Result {
+	return a.store.BackendDelete(rawDN, who)
 }
 
 // Modify applies modifications.
 func (a *Adapter) Modify(
-	req *ldap.ModifyRequest,
+	req *ldap.ModifyRequest, who ldap.Identity,
 ) ldap.Result {
-	return a.store.BackendModify(req)
+	return a.store.BackendModify(req, who)
 }
 
 // Compare tests one attribute value.
 func (a *Adapter) Compare(
-	req *ldap.CompareRequest,
+	req *ldap.CompareRequest, who ldap.Identity,
 ) ldap.Result {
-	return a.store.BackendCompare(req)
+	return a.store.BackendCompare(req, who)
 }
 
 // Suffixes are the naming contexts, for the root DSE.

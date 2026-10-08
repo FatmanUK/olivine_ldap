@@ -132,3 +132,74 @@ func TestCompareReachesBackend(t *testing.T) {
 			fake.compareCalls[0].Attribute)
 	}
 }
+
+// The connection records the DN the *backend* reports, not the
+// one the client sent. A client may spell its DN however it
+// likes, and an unnormalised DN compares against nothing — so
+// `self` and `dn=` access clauses would silently never match.
+func TestBoundDNComesFromTheBackend(t *testing.T) {
+	fake := newFake()
+	srv, cliTLS, addr := startWith(t, fake)
+	_ = srv
+	c := dial(t, cliTLS, addr)
+
+	e := ber.NewEncoder()
+	e.Int32(ber.TagInteger, 3)
+	// Mixed case, as a client might send it.
+	e.String(ldap.TagLDAPDN, "CN=Admin,DC=Example,DC=COM")
+	e.String(ldap.AuthSimple, "secret")
+	body, err := e.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Write(
+		envelope(t, 1, ldap.ReqBind, body)); err != nil {
+		t.Fatal(err)
+	}
+	if m := readMessage(t, c); m.Op != ldap.ResBind {
+		t.Fatalf("op = %#x", m.Op)
+	}
+	// A second operation carries the identity, which must be
+	// the fake's lower-cased answer rather than the client's
+	// spelling.
+	if _, err := c.Write(envelope(
+		t, 2, ldap.ReqSearch, searchBody(t))); err != nil {
+		t.Fatal(err)
+	}
+	readMessage(t, c)
+	last := fake.identities[len(fake.identities)-1]
+	if last.DN != "cn=admin,dc=example,dc=com" {
+		t.Errorf("identity = %q, want the backend's "+
+			"normalised DN", last.DN)
+	}
+}
+
+// At bind time the identity passed down is the one *before* the
+// bind — anonymous on a fresh connection. That is what makes the
+// `by self write by users read by * none` policy unbindable.
+func TestBindSeesThePreviousIdentity(t *testing.T) {
+	fake := newFake()
+	_, cliTLS, addr := startWith(t, fake)
+	c := dial(t, cliTLS, addr)
+
+	e := ber.NewEncoder()
+	e.Int32(ber.TagInteger, 3)
+	e.String(ldap.TagLDAPDN, "cn=admin,dc=example,dc=com")
+	e.String(ldap.AuthSimple, "secret")
+	body, err := e.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Write(
+		envelope(t, 1, ldap.ReqBind, body)); err != nil {
+		t.Fatal(err)
+	}
+	readMessage(t, c)
+	if len(fake.identities) == 0 {
+		t.Fatal("no identity recorded")
+	}
+	if !fake.identities[0].Anonymous() {
+		t.Errorf("bind saw %q, want anonymous",
+			fake.identities[0].DN)
+	}
+}

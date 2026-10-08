@@ -88,6 +88,30 @@ func DataScripts() []Script {
 		orderingScript(),
 		caseExactScript(),
 		integerOrderingScript(),
+		anonymousAddScript(),
+	}
+}
+
+// anonymousAddScript adds a schema-valid entry without binding.
+//
+// slapd answers strongerAuthRequired (8), not insufficientAccess
+// (50): an anonymous update is refused by a restriction on the
+// connection before the ACLs are consulted at all, and a grant of
+// `by * write` does not change it. Checking access first — which
+// is what Olivine did before this comparison existed — gives 50.
+func anonymousAddScript() Script {
+	return Script{
+		Name: "add-anonymous",
+		Requests: []Request{{
+			Name: "add",
+			Op:   ldap.ReqAdd,
+			Body: addBody("cn=New,"+baseDN, []attr{
+				{"objectClass",
+					[]string{"person"}},
+				{"cn", []string{"New"}},
+				{"sn", []string{"N"}},
+			}),
+		}},
 	}
 }
 

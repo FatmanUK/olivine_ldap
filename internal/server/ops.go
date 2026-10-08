@@ -48,10 +48,13 @@ func (c *conn) doBind(m *ldap.Message) bool {
 			Diagnostic: "version not supported",
 		})
 	}
-	res := c.srv.backend.Bind(req)
+	who, res := c.srv.backend.Bind(req, c.identity())
 	if res.Code == ldap.Success {
 		c.bound = true
-		c.boundDN = req.Name
+		// The backend's normalised DN, not req.Name: a
+		// client's own spelling will not compare against
+		// stored entries.
+		c.boundDN = who.DN
 	} else {
 		// A failed bind drops any previous identity: RFC
 		// 4513 4.4.2 makes the connection anonymous.
@@ -73,7 +76,8 @@ func (c *conn) doSearch(m *ldap.Message) bool {
 			Diagnostic: "invalid scope",
 		})
 	}
-	entries, res := c.srv.backend.Search(req)
+	entries, res := c.srv.backend.Search(
+		req, c.identity())
 	for _, e := range entries {
 		packet, err := ldap.EncodeSearchEntry(m.ID, e)
 		if err != nil {

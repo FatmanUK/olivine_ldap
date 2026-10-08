@@ -6,6 +6,12 @@ import (
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
 )
 
+// anyone is an anonymous requester. The default policy grants
+// read on everything, so these tests exercise the operations
+// rather than access control; internal/acl and access_test.go
+// cover the policy.
+var anyone = Identity{}
+
 // searchReq builds a SearchRequest for the tests.
 func searchReq(
 	base string, scope ldap.Scope, f ldap.Filter,
@@ -54,7 +60,8 @@ func TestBackendSearchFilters(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			got, res := s.BackendSearch(searchReq(
-				base, ldap.ScopeSubtree, c.filter))
+				base, ldap.ScopeSubtree, c.filter),
+				anyone)
 			if res.Code != ldap.Success {
 				t.Fatalf("result = %v", res.Code)
 			}
@@ -74,7 +81,7 @@ func TestEmptyAndOr(t *testing.T) {
 
 	got, res := s.BackendSearch(searchReq(base,
 		ldap.ScopeSubtree,
-		ldap.Filter{Tag: ldap.FilterAnd}))
+		ldap.Filter{Tag: ldap.FilterAnd}), anyone)
 	if res.Code != ldap.Success {
 		t.Fatalf("and: %v", res.Code)
 	}
@@ -84,7 +91,7 @@ func TestEmptyAndOr(t *testing.T) {
 	}
 	got, res = s.BackendSearch(searchReq(base,
 		ldap.ScopeSubtree,
-		ldap.Filter{Tag: ldap.FilterOr}))
+		ldap.Filter{Tag: ldap.FilterOr}), anyone)
 	if res.Code != ldap.Success {
 		t.Fatalf("or: %v", res.Code)
 	}
@@ -100,7 +107,7 @@ func TestBackendSearchMissingBase(t *testing.T) {
 	seed(t, s)
 	_, res := s.BackendSearch(searchReq(
 		"dc=absent,dc=com", ldap.ScopeSubtree,
-		presentFilter("objectClass")))
+		presentFilter("objectClass")), anyone)
 	if res.Code != ldap.NoSuchObject {
 		t.Errorf("code = %v, want noSuchObject", res.Code)
 	}
@@ -113,7 +120,7 @@ func TestProjectionNoAttributes(t *testing.T) {
 	req := searchReq("cn=Alice,ou=people,dc=example,dc=com",
 		ldap.ScopeBase, presentFilter("objectClass"))
 	req.Attributes = []string{ldap.NoAttributes}
-	got, res := s.BackendSearch(req)
+	got, res := s.BackendSearch(req, anyone)
 	if res.Code != ldap.Success {
 		t.Fatal(res.Code)
 	}
@@ -135,7 +142,7 @@ func TestProjectionSelectsAttributes(t *testing.T) {
 	req := searchReq("cn=Alice,ou=people,dc=example,dc=com",
 		ldap.ScopeBase, presentFilter("objectClass"))
 	req.Attributes = []string{"sn"}
-	got, _ := s.BackendSearch(req)
+	got, _ := s.BackendSearch(req, anyone)
 	if len(got) != 1 || len(got[0].Attributes) != 1 {
 		t.Fatalf("got %+v", got)
 	}
@@ -151,7 +158,7 @@ func TestProjectionTypesOnly(t *testing.T) {
 	req := searchReq("cn=Alice,ou=people,dc=example,dc=com",
 		ldap.ScopeBase, presentFilter("objectClass"))
 	req.TypesOnly = true
-	got, _ := s.BackendSearch(req)
+	got, _ := s.BackendSearch(req, anyone)
 	if len(got) != 1 {
 		t.Fatalf("%d entries", len(got))
 	}

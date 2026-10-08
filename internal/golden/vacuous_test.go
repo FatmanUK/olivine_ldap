@@ -19,6 +19,7 @@ var expectedEmpty = map[string]bool{
 	"compare":                   true,
 	"add-undefined-objectclass": true,
 	"filter-ordering":           true,
+	"add-anonymous":             true,
 }
 
 // TestDataScriptsAreNotVacuous guards against a comparison that

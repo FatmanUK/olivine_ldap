@@ -9,7 +9,8 @@ VERSION := $(shell git describe --tags --always --dirty \
 LDFLAGS := -X main.version=$(VERSION)
 
 .PHONY: all build test race store postgres-down lint fmt vet \
-	style golden golden-data golden-build clean help
+	style golden golden-data golden-acl golden-build \
+	clean help
 
 all: lint test build
 
@@ -31,6 +32,14 @@ store:
 	@dsn=$$(./scripts/postgres-up.sh) && \
 		OLIVINE_TEST_DSN="$$dsn" \
 		$(GO) test -count=1 ./internal/store/
+
+## golden-acl: compare access-control behaviour against the C
+##            (needs Postgres and the oracle image)
+golden-acl:
+	@dsn=$$(./scripts/postgres-up.sh) && \
+		OLIVINE_TEST_DSN="$$dsn" \
+		$(GO) test -tags golden -count=1 -v \
+			-run TestGoldenACL ./internal/golden/
 
 ## postgres-down: remove the throwaway Postgres
 postgres-down:

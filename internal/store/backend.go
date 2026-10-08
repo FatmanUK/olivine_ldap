@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 
+	"github.com/FatmanUK/openldap_olivine/internal/acl"
 	"github.com/FatmanUK/openldap_olivine/internal/dn"
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
 )
@@ -14,8 +15,16 @@ import (
 // code to go astray.
 
 // BackendSearch runs a search and returns the matching entries.
+//
+// The levels follow what the oracle showed, which is finer than
+// a single read check:
+//
+//	below Search on the base  the search is refused outright
+//	Search but not Read       success, and no entries at all
+//	Read                      the entry, with the attributes
+//	                          that are themselves readable
 func (s *Store) BackendSearch(
-	req *ldap.SearchRequest,
+	req *ldap.SearchRequest, who Identity,
 ) ([]ldap.SearchEntry, ldap.Result) {
 	// The base must exist, scope notwithstanding: RFC 4511
 	// 4.5.3 gives noSuchObject when it does not, even for a
@@ -23,29 +32,71 @@ func (s *Store) BackendSearch(
 	if _, err := s.Get(req.BaseObject); err != nil {
 		return nil, resultFor(err)
 	}
+	norm, _, err := s.normalise(req.BaseObject)
+	if err != nil {
+		return nil, resultFor(err)
+	}
+	level := s.accessTo(who, norm, acl.EntryAttribute)
+	if level < acl.Search {
+		return nil, denyResult(level)
+	}
 	entries, err := s.Search(req.BaseObject, req.Scope)
 	if err != nil {
 		return nil, resultFor(err)
 	}
+	return s.collectEntries(entries, req, who),
+		ldap.Result{Code: ldap.Success}
+}
+
+// collectEntries filters and projects the matching entries.
+func (s *Store) collectEntries(
+	entries []Entry, req *ldap.SearchRequest,
+	who Identity,
+) []ldap.SearchEntry {
 	out := make([]ldap.SearchEntry, 0, len(entries))
 	for i := range entries {
 		e := &entries[i]
+		// Each entry is checked in its own right: a subtree
+		// search crosses entries with different access.
+		lvl := s.accessTo(who, e.DN, acl.EntryAttribute)
+		if lvl < acl.Read {
+			continue
+		}
 		if !Matches(s.schema, e, req.Filter) {
 			continue
 		}
-		out = append(out, s.project(e, req))
+		out = append(out, s.project(e, req, who))
 	}
-	return out, ldap.Result{Code: ldap.Success}
+	return out
 }
 
 // BackendAdd creates an entry.
+//
+// Write access is needed on the entry being created. The check
+// is against the new DN, because that is what the policy's dn
+// clauses are written in terms of.
 func (s *Store) BackendAdd(
-	req *ldap.AddRequest,
+	req *ldap.AddRequest, who Identity,
 ) ldap.Result {
 	attrs := make([]Attribute, 0, len(req.Attributes))
 	for _, a := range req.Attributes {
 		attrs = append(attrs,
 			Attribute{Type: a.Type, Values: a.Values})
+	}
+	// The schema first, then the connection restriction, then
+	// the ACL. That is the order slapd uses: an anonymous add
+	// of an entry with an undefined objectClass answers
+	// invalidSyntax (21), and one with a valid schema answers
+	// strongerAuthRequired (8). Checking access first gives
+	// insufficientAccess and differs from the C on both.
+	if res, ok := s.denySchema(attrs); !ok {
+		return res
+	}
+	if res, ok := requireAuthenticatedUpdate(who); !ok {
+		return res
+	}
+	if res, ok := s.denyWrite(who, req.Entry); !ok {
+		return res
 	}
 	if _, err := s.Add(req.Entry, attrs); err != nil {
 		return resultFor(err)
@@ -53,8 +104,31 @@ func (s *Store) BackendAdd(
 	return ldap.Result{Code: ldap.Success}
 }
 
+// denySchema validates the attributes a request carries, so the
+// schema can be checked before access control.
+func (s *Store) denySchema(
+	attrs []Attribute,
+) (ldap.Result, bool) {
+	values, err := s.buildValues(attrs)
+	if err != nil {
+		return resultFor(err), false
+	}
+	if err := s.checkEntry(values); err != nil {
+		return resultFor(err), false
+	}
+	return ldap.Result{}, true
+}
+
 // BackendDelete removes an entry.
-func (s *Store) BackendDelete(rawDN string) ldap.Result {
+func (s *Store) BackendDelete(
+	rawDN string, who Identity,
+) ldap.Result {
+	if res, ok := requireAuthenticatedUpdate(who); !ok {
+		return res
+	}
+	if res, ok := s.denyWrite(who, rawDN); !ok {
+		return res
+	}
 	if err := s.Delete(rawDN); err != nil {
 		return resultFor(err)
 	}
@@ -62,9 +136,23 @@ func (s *Store) BackendDelete(rawDN string) ldap.Result {
 }
 
 // BackendModify applies modifications.
+//
+// Write is checked per attribute, not once for the entry: a
+// policy may permit changing one attribute and not another, and
+// checking only the entry would let the narrower grant through.
 func (s *Store) BackendModify(
-	req *ldap.ModifyRequest,
+	req *ldap.ModifyRequest, who Identity,
 ) ldap.Result {
+	if res, ok := requireAuthenticatedUpdate(who); !ok {
+		return res
+	}
+	for _, m := range req.Modifications {
+		res, ok := s.denyWriteAttr(
+			who, req.Object, m.Attribute.Type)
+		if !ok {
+			return res
+		}
+	}
 	mods := make([]Mod, 0, len(req.Modifications))
 	for _, m := range req.Modifications {
 		op, ok := modOp(m.Op)

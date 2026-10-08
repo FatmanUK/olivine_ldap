@@ -53,7 +53,15 @@ func imageTag() (string, error) {
 	return "olivine-oracle:" + tag, nil
 }
 
-// StartOracle runs slapd in a container on a host port.
+// StartOracle runs slapd in a container on a host port with no
+// access directives, so the default of read applies.
+func StartOracle(port int) (*Oracle, error) {
+	return StartOracleWith(port, "")
+}
+
+// StartOracleWith runs slapd with extra configuration appended,
+// which is how the access comparison gives both implementations
+// the same policy.
 //
 // Configuration is generated per run and bind-mounted
 // read-only; the database lives inside the container, so
@@ -61,7 +69,9 @@ func imageTag() (string, error) {
 // uid. Rootless Podman maps that uid to a subuid, and a
 // bind-mounted writable directory is the usual way this goes
 // wrong.
-func StartOracle(port int) (*Oracle, error) {
+func StartOracleWith(
+	port int, extra string,
+) (*Oracle, error) {
 	image, err := imageTag()
 	if err != nil {
 		return nil, err
@@ -83,7 +93,7 @@ func StartOracle(port int) (*Oracle, error) {
 		Addr: fmt.Sprintf("127.0.0.1:%d", port),
 		dir:  dir,
 	}
-	if err := writeOracleConfig(dir); err != nil {
+	if err := writeOracleConfig(dir, extra); err != nil {
 		o.Stop()
 		return nil, err
 	}

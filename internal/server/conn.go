@@ -98,6 +98,15 @@ func (c *conn) disconnect(why string) {
 	_, _ = c.net.Write(notice)
 }
 
+// identity is who this connection currently is.
+//
+// At bind time this is still the previous identity, usually
+// anonymous, which is what access control sees when it checks
+// auth on userPassword.
+func (c *conn) identity() ldap.Identity {
+	return ldap.Identity{DN: c.boundDN}
+}
+
 // send writes one response message.
 func (c *conn) send(packet []byte) error {
 	_, err := c.net.Write(packet)

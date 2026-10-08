@@ -3,6 +3,7 @@ package store
 import (
 	"strings"
 
+	"github.com/FatmanUK/openldap_olivine/internal/acl"
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
 )
 
@@ -18,27 +19,29 @@ const userPasswordAttr = "userpassword"
 // this, because accepting it would authenticate anyone who knows
 // a DN.
 func (s *Store) BackendBind(
-	req *ldap.BindRequest,
-) ldap.Result {
+	req *ldap.BindRequest, who Identity,
+) (Identity, ldap.Result) {
 	if req.IsSASL {
 		// SASL is still an open question; refusing by name
 		// is more useful than a generic failure.
-		return ldap.Result{
+		return Identity{}, ldap.Result{
 			Code: ldap.AuthMethodNotSupported,
 			Diagnostic: "SASL mechanism " +
 				req.Mechanism + " not supported",
 		}
 	}
 	if req.Name == "" && req.Simple == "" {
-		return ldap.Result{Code: ldap.Success}
+		// Anonymous: success, and the identity stays empty.
+		return Identity{},
+			ldap.Result{Code: ldap.Success}
 	}
 	if req.Simple == "" {
-		return ldap.Result{
+		return Identity{}, ldap.Result{
 			Code:       ldap.UnwillingToPerform,
 			Diagnostic: "unauthenticated bind rejected",
 		}
 	}
-	return s.checkCredentials(req)
+	return s.checkCredentials(req, who)
 }
 
 // checkCredentials verifies a name and password.
@@ -47,21 +50,34 @@ func (s *Store) BackendBind(
 // telling an unauthenticated caller which DNs exist is a
 // disclosure, and slapd does not do it either.
 func (s *Store) checkCredentials(
-	req *ldap.BindRequest,
-) ldap.Result {
+	req *ldap.BindRequest, who Identity,
+) (Identity, ldap.Result) {
+	bad := ldap.Result{Code: ldap.InvalidCredentials}
 	e, err := s.Get(req.Name)
 	if err != nil {
-		return ldap.Result{Code: ldap.InvalidCredentials}
+		return Identity{}, bad
+	}
+	// auth access to userPassword, checked as the identity the
+	// connection *currently* has. A policy of
+	// `by self write by users read by * none` therefore stops
+	// everyone binding, since at this moment the requester is
+	// still anonymous — confirmed against slapd, which answers
+	// invalidCredentials under exactly that configuration.
+	if s.accessTo(who, e.DN, userPasswordAttr) < acl.Auth {
+		return Identity{}, bad
 	}
 	for _, v := range e.Values {
 		if v.Type != userPasswordAttr {
 			continue
 		}
 		if VerifyPassword(v.Value, req.Simple) {
-			return ldap.Result{Code: ldap.Success}
+			// e.DN is the normalised form, which is what
+			// an access check can compare.
+			return Identity{DN: e.DN},
+				ldap.Result{Code: ldap.Success}
 		}
 	}
-	return ldap.Result{Code: ldap.InvalidCredentials}
+	return Identity{}, bad
 }
 
 // BackendCompare tests one attribute value.
@@ -70,7 +86,7 @@ func (s *Store) checkCredentials(
 // that answers is not a compare that failed. ResultCode.
 // IsSuccess says the same.
 func (s *Store) BackendCompare(
-	req *ldap.CompareRequest,
+	req *ldap.CompareRequest, who Identity,
 ) ldap.Result {
 	e, err := s.Get(req.Entry)
 	if err != nil {
@@ -84,9 +100,15 @@ func (s *Store) BackendCompare(
 		}
 	}
 	typ := strings.ToLower(canonicalName(at))
-	want := NormaliseValue(s.schema, at, req.Value)
+	if s.accessTo(who, e.DN, typ) < acl.Compare {
+		// The entry's access, not the attribute's, decides
+		// whether this reads as insufficientAccess or
+		// noSuchObject. See denyResult.
+		return s.refusal(who, e.DN)
+	}
+	rule := s.schema.EqualityRule(at)
 	for _, v := range e.Values {
-		if v.Type == typ && v.Norm == want {
+		if v.Type == typ && rule.Equal(v.Value, req.Value) {
 			return ldap.Result{Code: ldap.CompareTrue}
 		}
 	}

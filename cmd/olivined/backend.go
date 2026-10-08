@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/FatmanUK/openldap_olivine/internal/acl"
 	"github.com/FatmanUK/openldap_olivine/internal/schema"
 	"github.com/FatmanUK/openldap_olivine/internal/server"
 	"github.com/FatmanUK/openldap_olivine/internal/store"
@@ -49,7 +50,33 @@ func openBackend(c config) (server.Backend, error) {
 	if err := addSuffixes(s, c.suffixes); err != nil {
 		return nil, err
 	}
+	if err := applyPolicy(s, c); err != nil {
+		return nil, err
+	}
 	return store.NewAdapter(s), nil
+}
+
+// applyPolicy loads the access directives, if any.
+//
+// No file means no directives, which is slapd's default of read
+// on everything (frontend.c:99). That is a deliberate default
+// rather than an omission: a server that refused to start without
+// an ACL file would be harder to stand up, and one that defaulted
+// to *deny* would differ from the C.
+func applyPolicy(s *store.Store, c config) error {
+	if c.aclFile == "" {
+		return nil
+	}
+	text, err := os.ReadFile(c.aclFile)
+	if err != nil {
+		return fmt.Errorf("access file: %w", err)
+	}
+	policy, err := acl.Parse(string(text))
+	if err != nil {
+		return fmt.Errorf("%s: %w", c.aclFile, err)
+	}
+	s.SetPolicy(policy)
+	return nil
 }
 
 // addSuffixes declares the naming contexts.

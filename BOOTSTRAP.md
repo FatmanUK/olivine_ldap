@@ -50,8 +50,13 @@ that have aged worst in the C:
   golden suite compares substring, ordering, integer-ordering and spacing
   behaviour against slapd. The two hand-written `caseInsensitiveRules`
   placeholders in `internal/dn` and `internal/store` are gone.
+- **Access control works and matches slapd on nine policies**, compared by
+  `make golden-acl`: the same directive text is installed in `slapd.conf` and
+  parsed by `internal/acl`. Levels, the disclose switch, per-attribute
+  selection, `self`/`users`/`anonymous`/`dn=` subjects and `dn.subtree=`
+  scoping all agree.
 - Not implemented: modrdn, the root DSE, abandon's actual effect, SASL,
-  paged results, ACLs.
+  paged results, and the ACL features listed in §3.3.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
@@ -156,6 +161,34 @@ upstream behaviours that are easy to get wrong:
   `ldap.h:522-548` states every operation that way — `LDAP_REQ_BIND` is
   `0x60`. A decoded form would need re-packing at every comparison.
 - **`ber_put_boolean` writes `0xff` for true**, not `0x01`.
+- **Default access is read** when no `access to` clause matches at all
+  (`frontend.c:99`, `be_dfltaccess = ACL_READ`), which is why anonymous
+  searches work against a slapd with no ACL configuration.
+- **A clause that matches with no matching `by` denies** — it does not fall
+  through to the default.
+- **`disclose` is the hide-or-admit switch.** Without it an unreadable entry
+  answers `noSuchObject` (32); with it, `insufficientAccess` (50).
+- **The hide-or-admit decision belongs to the *entry*, not the attribute.**
+  Under `access to attrs=sn by * none` then `access to * by * read`, a compare
+  of `sn` answers `insufficientAccess`, because the requester can already see
+  the entry. Using the attribute's own level gives `noSuchObject` and differs.
+- **`access to` selection is per attribute**, so one clause can hide
+  `description` while a later one grants everything else.
+- **A policy of `by self write by users read by * none` makes it impossible
+  for anyone to bind.** At bind time the requester is still anonymous, so
+  neither `self` nor `users` matches and `* none` denies `auth` on
+  `userPassword`. slapd answers `invalidCredentials`. The working pattern is
+  an explicit `access to attrs=userPassword by * auth`.
+- **An anonymous update is refused with `strongerAuthRequired` (8)**, before
+  the ACLs are consulted and regardless of a `by * write` grant: it is a
+  restriction on the connection, not a judgement about the target.
+- **The schema is checked before that restriction.** An anonymous add of an
+  entry with an undefined objectClass answers `invalidSyntax` (21), not 8.
+- **The bound DN must be the normalised form.** A client may spell its DN
+  however it likes, and an unnormalised DN compares against nothing — `self`
+  and `dn=` clauses then silently never match. `Bind` returns the identity so
+  the backend, which has the schema, supplies it; slapd keeps `o_ndn` for the
+  same reason.
 - **An attribute with no ORDERING rule matches nothing under `>=` or `<=`.**
   `filterentry.c:648-658` reads the type's own `sat_ordering` and, when it is
   NULL, sets `LDAP_INAPPROPRIATE_MATCHING` and skips the value, so the search
@@ -342,6 +375,13 @@ are not "fixed" back by accident.
   rather than a moving branch. This is the upstream C reference.
 
 **Compatibility choices:**
+
+- **ACL features deliberately refused rather than approximated.**
+  `filter=` selectors, `group=`/`set=`/`ssf=` subjects, the regex and expand
+  DN styles, privilege sets (`=wrscxd`, `+`/`-`) and the `continue`/`break`
+  controls all return a parse error. An access-control gap that silently
+  matched everything would widen access, which is the wrong direction for this
+  kind of failure.
 
 - **TLS only** — no cleartext, no STARTTLS.
 - **syncrepl is not ported.** `servers/slapd/syncrepl.c` is 8,083 lines of

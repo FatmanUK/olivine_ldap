@@ -32,9 +32,9 @@ func TestBindSucceeds(t *testing.T) {
 	dn := "cn=admin,dc=example,dc=com"
 	withPassword(t, s, dn, "secret")
 
-	res := s.BackendBind(&ldap.BindRequest{
+	_, res := s.BackendBind(&ldap.BindRequest{
 		Version: 3, Name: dn, Simple: "secret",
-	})
+	}, anyone)
 	if res.Code != ldap.Success {
 		t.Errorf("code = %v, want success", res.Code)
 	}
@@ -46,9 +46,9 @@ func TestBindWrongPassword(t *testing.T) {
 	dn := "cn=admin,dc=example,dc=com"
 	withPassword(t, s, dn, "secret")
 
-	res := s.BackendBind(&ldap.BindRequest{
+	_, res := s.BackendBind(&ldap.BindRequest{
 		Version: 3, Name: dn, Simple: "wrong",
-	})
+	}, anyone)
 	if res.Code != ldap.InvalidCredentials {
 		t.Errorf("code = %v, want invalidCredentials",
 			res.Code)
@@ -61,11 +61,11 @@ func TestBindWrongPassword(t *testing.T) {
 func TestBindMissingEntryDoesNotDisclose(t *testing.T) {
 	s := testStore(t)
 	seed(t, s)
-	res := s.BackendBind(&ldap.BindRequest{
+	_, res := s.BackendBind(&ldap.BindRequest{
 		Version: 3,
 		Name:    "cn=nobody,dc=example,dc=com",
 		Simple:  "secret",
-	})
+	}, anyone)
 	if res.Code != ldap.InvalidCredentials {
 		t.Errorf("code = %v, want invalidCredentials",
 			res.Code)
@@ -77,7 +77,7 @@ func TestBindMissingEntryDoesNotDisclose(t *testing.T) {
 func TestAnonymousBind(t *testing.T) {
 	s := testStore(t)
 	seed(t, s)
-	res := s.BackendBind(&ldap.BindRequest{Version: 3})
+	_, res := s.BackendBind(&ldap.BindRequest{Version: 3}, anyone)
 	if res.Code != ldap.Success {
 		t.Errorf("code = %v, want success", res.Code)
 	}
@@ -92,9 +92,9 @@ func TestUnauthenticatedBindRejected(t *testing.T) {
 	dn := "cn=admin,dc=example,dc=com"
 	withPassword(t, s, dn, "secret")
 
-	res := s.BackendBind(&ldap.BindRequest{
+	_, res := s.BackendBind(&ldap.BindRequest{
 		Version: 3, Name: dn,
-	})
+	}, anyone)
 	if res.Code == ldap.Success {
 		t.Error("unauthenticated bind must not succeed")
 	}
@@ -102,9 +102,9 @@ func TestUnauthenticatedBindRejected(t *testing.T) {
 
 func TestSASLRefusedByName(t *testing.T) {
 	s := testStore(t)
-	res := s.BackendBind(&ldap.BindRequest{
+	_, res := s.BackendBind(&ldap.BindRequest{
 		Version: 3, IsSASL: true, Mechanism: "GSSAPI",
-	})
+	}, anyone)
 	if res.Code != ldap.AuthMethodNotSupported {
 		t.Errorf("code = %v, want authMethodNotSupported",
 			res.Code)
@@ -118,13 +118,13 @@ func TestCompareTrueAndFalse(t *testing.T) {
 
 	res := s.BackendCompare(&ldap.CompareRequest{
 		Entry: alice, Attribute: "sn", Value: "Anderson",
-	})
+	}, anyone)
 	if res.Code != ldap.CompareTrue {
 		t.Errorf("code = %v, want compareTrue", res.Code)
 	}
 	res = s.BackendCompare(&ldap.CompareRequest{
 		Entry: alice, Attribute: "sn", Value: "Other",
-	})
+	}, anyone)
 	if res.Code != ldap.CompareFalse {
 		t.Errorf("code = %v, want compareFalse", res.Code)
 	}

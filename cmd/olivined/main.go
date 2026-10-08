@@ -55,6 +55,9 @@ Configuration comes from the environment:
                      every operation is unwillingToPerform
   OLIVINE_SUFFIX     naming contexts, colon-separated
   OLIVINE_SCHEMA     extra .schema files, colon-separated
+  OLIVINE_ACL_FILE   access directives in slapd.conf syntax;
+                     without it, read on everything, which is
+                     what slapd defaults to
 
 TLS is mandatory. There is no cleartext listener and no
 STARTTLS, so a missing certificate is a configuration error

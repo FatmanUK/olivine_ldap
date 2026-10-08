@@ -7,6 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/FatmanUK/openldap_olivine/internal/acl"
 	"github.com/FatmanUK/openldap_olivine/internal/dn"
 	"github.com/FatmanUK/openldap_olivine/internal/schema"
 )
@@ -24,6 +25,9 @@ type Store struct {
 	// suffixes are the naming contexts this store holds. See
 	// AddSuffix.
 	suffixes []string
+	// policy is the access policy, nil for slapd's default of
+	// read on everything.
+	policy *acl.Policy
 }
 
 // New returns a Store over an open GORM connection.
