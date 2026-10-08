@@ -45,8 +45,13 @@ that have aged worst in the C:
   one: an undefined objectClass is `invalidSyntax` (21), not
   `objectClassViolation` (65). Every code and diagnostic was captured from the
   oracle, not guessed.
+- **Matching rules and syntax validation are implemented.** `internal/schema`
+  carries the normalizers, the comparisons and the syntax validators, and the
+  golden suite compares substring, ordering, integer-ordering and spacing
+  behaviour against slapd. The two hand-written `caseInsensitiveRules`
+  placeholders in `internal/dn` and `internal/store` are gone.
 - Not implemented: modrdn, the root DSE, abandon's actual effect, SASL,
-  paged results, and the matching-rule semantics from step 6's second half.
+  paged results, ACLs.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
@@ -96,11 +101,8 @@ authoritative for sequencing. In brief:
 4. ~~The protocol layer and the TLS listener.~~ Done, `59bd65f` and this
    commit.
 5. ~~The golden harness, `internal/golden`.~~ Done — this commit.
-6. ~~Schema subsystem.~~ Parsing and the registry done — this commit.
-   Still outstanding within it: syntaxes and matching rules as *behaviour*
-   (`schema_init.c`'s normalisation and comparison functions), which is where
-   behaviour compatibility is actually won or lost. The definitions are
-   parsed; the semantics are not implemented.
+6. ~~Schema subsystem.~~ Done — parsing, the registry, checking, and the
+   matching rules and syntax validators.
 7. ~~DN handling and the Postgres store.~~ Done — this commit.
 8. **Operations** — mostly done, this commit. Bind, search, add, modify,
    delete and compare are wired and golden-verified. Outstanding: **schema
@@ -154,6 +156,33 @@ upstream behaviours that are easy to get wrong:
   `ldap.h:522-548` states every operation that way — `LDAP_REQ_BIND` is
   `0x60`. A decoded form would need re-packing at every comparison.
 - **`ber_put_boolean` writes `0xff` for true**, not `0x01`.
+- **An attribute with no ORDERING rule matches nothing under `>=` or `<=`.**
+  `filterentry.c:648-658` reads the type's own `sat_ordering` and, when it is
+  NULL, sets `LDAP_INAPPROPRIATE_MATCHING` and skips the value, so the search
+  succeeds *empty*. `serialNumber` is the example: it declares EQUALITY and
+  SUBSTR but no ORDERING. Substituting the equality rule's ordering partner —
+  which `schema_init.c`'s `associated` field appears to invite — returns three
+  entries where slapd returns none. That field is about indexing and
+  approximate matching, not about filling in a missing rule.
+- **A value of nothing but spaces normalises to a *single space*, not empty**
+  (`schema_init.c:1934-1939`, and the same pattern in
+  `numericStringNormalize` and `telephoneNumberNormalize`). `strings.Fields`
+  gives the empty string and the entry then never matches.
+- **Case folding is the only difference between the caseIgnore and caseExact
+  families.** Both share `UTF8StringNormalize`; `schema_init.c:1893` picks by
+  asking whether the rule is associated with `caseExactMatch`.
+- **Substring fragments trim differently from whole values.** An `any`
+  fragment keeps the space at both edges, `initial` keeps its trailing one,
+  `final` its leading one — `schema_init.c:1909-1929`. Normalising all three
+  as whole values silently drops asserted spaces.
+- **`telephoneNumberNormalize` strips spaces and hyphens and does not fold
+  case**, which the placeholder it replaced had wrong.
+- **The Integer syntax has no normalizer; it validates instead.**
+  `integerValidate` refuses a bare `-`, `-0` and leading zeros, which is why
+  `integerMatch` can compare by digit count and then bytes.
+- **`extensibleObject` short-circuits the permitted-attribute check
+  entirely** (`schema_check.c:587-589`, "extensibleObject allows all"). MUST
+  is still enforced; only what is *allowed* is skipped.
 - **slapd returns attribute descriptions in the capitalisation the schema
   declares**, so an entry comes back carrying `objectClass`, not
   `objectclass`. The store keeps the lower-cased form — right for matching

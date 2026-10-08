@@ -6,62 +6,21 @@ import (
 	"github.com/FatmanUK/openldap_olivine/internal/schema"
 )
 
-// caseInsensitiveRules are the equality matching rules under
-// which a value is case-folded.
-//
-// The same list internal/dn uses, and for the same reason: the
-// normalised form is what equality comparison sees, so a value
-// stored unfolded under caseIgnoreMatch would never match a
-// correctly-spelled filter. It lives here rather than being
-// shared because the full set arrives with the matching rules
-// at plan step 6's second half, and will then replace both.
-var caseInsensitiveRules = map[string]bool{
-	"caseIgnoreMatch":        true,
-	"caseIgnoreIA5Match":     true,
-	"caseIgnoreListMatch":    true,
-	"telephoneNumberMatch":   true,
-	"distinguishedNameMatch": true,
-	"objectIdentifierMatch":  true,
-}
-
 // NormaliseValue reduces a value to the form its equality
 // matching rule compares.
 //
-// The matching rule may be inherited: cn declares no EQUALITY
-// of its own and takes caseIgnoreMatch from name, so the SUP
-// chain has to be walked. Reading only the attribute's own rule
-// leaves cn case-sensitive, which internal/dn found the hard
-// way against slapdn.
+// Delegates to internal/schema, which replaced the hand-written
+// list of case-insensitive rule names this file used to carry.
+// That list was wrong about telephoneNumberMatch, which strips
+// spaces and hyphens rather than folding case, and it could not
+// express the surprising part of UTF8StringNormalize at all: a
+// value of nothing but spaces normalises to a *single space*, not
+// to empty.
 func NormaliseValue(
 	r *schema.Registry, at *schema.AttributeType,
 	value string,
 ) string {
-	if caseInsensitiveRules[equalityRule(r, at)] {
-		value = strings.ToLower(value)
-	}
-	// RFC 4518 insignificant space handling.
-	return strings.Join(strings.Fields(value), " ")
-}
-
-// equalityRule resolves an attribute's equality matching rule,
-// following SUP when the type states none itself.
-func equalityRule(
-	r *schema.Registry, at *schema.AttributeType,
-) string {
-	for depth := 0; depth < 16; depth++ {
-		if at.EqualityOID != "" {
-			return at.EqualityOID
-		}
-		if at.SuperiorOID == "" {
-			return ""
-		}
-		sup, ok := r.AttributeType(at.SuperiorOID)
-		if !ok {
-			return ""
-		}
-		at = sup
-	}
-	return ""
+	return r.NormaliseValue(at, value, schema.UseValue)
 }
 
 // canonicalType resolves an attribute name or OID to the

@@ -16,6 +16,8 @@ type Registry struct {
 	ocsByOID    map[string]*ObjectClass
 	ocsByName   map[string]*ObjectClass
 	macros      macros
+	rulesByOID  map[string]*MatchingRule
+	rulesByName map[string]*MatchingRule
 
 	// Skipped records definitions that were recognised as
 	// definitions but not registered, with the reason.
@@ -36,13 +38,17 @@ type Skip struct {
 
 // NewRegistry returns an empty Registry.
 func NewRegistry() *Registry {
-	return &Registry{
+	r := &Registry{
 		attrsByOID:  map[string]*AttributeType{},
 		attrsByName: map[string]*AttributeType{},
 		ocsByOID:    map[string]*ObjectClass{},
 		ocsByName:   map[string]*ObjectClass{},
 		macros:      macros{},
+		rulesByOID:  map[string]*MatchingRule{},
+		rulesByName: map[string]*MatchingRule{},
 	}
+	r.registerRules()
+	return r
 }
 
 // AddAttributeType registers at.

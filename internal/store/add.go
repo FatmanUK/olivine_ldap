@@ -108,6 +108,18 @@ func (s *Store) buildValues(
 		}
 		name := strings.ToLower(canonicalName(at))
 		for _, v := range a.Values {
+			// The syntax validates before the value is
+			// stored. For Integer there is no normalizer
+			// at all — integerValidate refuses "-0" and
+			// leading zeros rather than rewriting them,
+			// which is what lets integerMatch compare by
+			// length.
+			err := s.schema.Validate(at, v)
+			if err != nil {
+				return nil, &SyntaxError{
+					Type: name, Value: v,
+				}
+			}
 			out = append(out, Value{
 				Type:  name,
 				Value: v,
@@ -125,6 +137,17 @@ func canonicalName(at *schema.AttributeType) string {
 		return at.Names[0]
 	}
 	return at.OID
+}
+
+// SyntaxError names a value its attribute's syntax rejects.
+type SyntaxError struct {
+	Type  string
+	Value string
+}
+
+// Error implements error.
+func (e *SyntaxError) Error() string {
+	return "store: invalid syntax for " + e.Type
 }
 
 // UnknownAttributeError names an attribute no schema defines.

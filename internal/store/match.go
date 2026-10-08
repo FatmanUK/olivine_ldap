@@ -40,7 +40,9 @@ func Matches(
 	case ldap.FilterApprox:
 		// No approximate matching rules are implemented, so
 		// approx falls back to equality. slapd does the
-		// same when an attribute has no approx rule.
+		// same when an attribute has no approx rule
+		// (directoryStringApproxMatchOID is the hook it
+		// would use).
 		return equality(reg, e, f)
 	}
 	return false
@@ -86,8 +88,12 @@ func present(
 	return false
 }
 
-// equality compares against the normalised value, so the
-// attribute's matching rule decides case and spacing.
+// equality compares under the attribute's equality rule.
+//
+// The rule's own comparison is used rather than a string test on
+// the stored normal form, because integerMatch orders by digit
+// count before bytes: "10" and "010" would otherwise differ, and
+// the normal form cannot express that on its own.
 func equality(
 	reg *schema.Registry, e *Entry, f ldap.Filter,
 ) bool {
@@ -95,10 +101,13 @@ func equality(
 	if !ok {
 		return false
 	}
+	rule := reg.EqualityRule(at)
 	typ := strings.ToLower(canonicalName(at))
-	want := NormaliseValue(reg, at, f.Value)
 	for _, v := range e.Values {
-		if v.Type == typ && v.Norm == want {
+		if v.Type != typ {
+			continue
+		}
+		if rule.Equal(v.Value, f.Value) {
 			return true
 		}
 	}

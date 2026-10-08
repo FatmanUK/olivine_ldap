@@ -9,9 +9,13 @@ import (
 
 // substrings is the substrings filter.
 //
-// Matched against the normalised value, and the asserted parts
-// are normalised the same way, so (cn=AL*) finds cn=Alice under
-// caseIgnoreMatch.
+// Each asserted fragment is normalised under the attribute's
+// *substrings* rule and with the use that says which fragment it
+// is, because UTF8StringNormalize trims differently for each: an
+// `any` fragment keeps both its edges' spaces, an `initial`
+// fragment keeps its trailing one, and a `final` fragment keeps
+// its leading one. Normalising all three as whole values would
+// quietly drop spaces the client asserted.
 func substrings(
 	reg *schema.Registry, e *Entry, f ldap.Filter,
 ) bool {
@@ -19,48 +23,54 @@ func substrings(
 	if !ok {
 		return false
 	}
+	rule := reg.SubstringsRule(at)
+	if rule == nil {
+		// No substrings rule: inappropriateMatching, which
+		// makes the value not match rather than falling
+		// back to equality.
+		return false
+	}
 	typ := strings.ToLower(canonicalName(at))
 	for _, v := range e.Values {
 		if v.Type != typ {
 			continue
 		}
-		if matchSubstrings(reg, at, v.Norm, f.Substrings) {
+		stored := rule.Normalise(v.Value, schema.UseValue)
+		if matchSubstrings(rule, stored, f.Substrings) {
 			return true
 		}
 	}
 	return false
 }
 
-// matchSubstrings tests one value against initial, any and
-// final.
+// matchSubstrings tests one value against initial, any and final.
 //
-// The any parts must appear in order and must not overlap, which
-// is why the search advances past each match rather than
+// The any fragments must appear in order and must not overlap,
+// which is why the search advances past each match rather than
 // restarting.
 func matchSubstrings(
-	reg *schema.Registry, at *schema.AttributeType,
-	value string, s ldap.Substrings,
+	rule *schema.MatchingRule, value string,
+	s ldap.Substrings,
 ) bool {
-	norm := func(x string) string {
-		return NormaliseValue(reg, at, x)
-	}
 	rest := value
 	if s.Initial != "" {
-		p := norm(s.Initial)
+		p := rule.Normalise(s.Initial,
+			schema.UseSubstringInitial)
 		if !strings.HasPrefix(rest, p) {
 			return false
 		}
 		rest = rest[len(p):]
 	}
 	if s.Final != "" {
-		p := norm(s.Final)
+		p := rule.Normalise(s.Final,
+			schema.UseSubstringFinal)
 		if !strings.HasSuffix(rest, p) {
 			return false
 		}
 		rest = rest[:len(rest)-len(p)]
 	}
 	for _, a := range s.Any {
-		p := norm(a)
+		p := rule.Normalise(a, schema.UseSubstringAny)
 		i := strings.Index(rest, p)
 		if i < 0 {
 			return false
@@ -72,12 +82,11 @@ func matchSubstrings(
 
 // ordering is the >= and <= filter.
 //
-// Compared as strings on the normalised value. That is right for
-// the caseIgnore* rules, whose ordering rule is a string
-// comparison, and wrong for integerOrderingMatch, which wants
-// numeric order. Correct ordering needs the matching rules from
-// plan step 6's second half; until then this is honest about
-// being a string compare.
+// The comparison comes from the attribute's ordering rule, so
+// integerOrderingMatch orders numerically and the caseIgnore
+// family orders as strings. Comparing normalised values as
+// strings regardless — which this did before the matching rules
+// existed — puts "10" before "9".
 func ordering(
 	reg *schema.Registry, e *Entry, f ldap.Filter,
 ) bool {
@@ -85,16 +94,20 @@ func ordering(
 	if !ok {
 		return false
 	}
+	rule := reg.OrderingRule(at)
+	if rule == nil {
+		return false
+	}
 	typ := strings.ToLower(canonicalName(at))
-	want := NormaliseValue(reg, at, f.Value)
 	for _, v := range e.Values {
 		if v.Type != typ {
 			continue
 		}
-		if f.Tag == ldap.FilterGE && v.Norm >= want {
+		c := rule.Compare(v.Value, f.Value)
+		if f.Tag == ldap.FilterGE && c >= 0 {
 			return true
 		}
-		if f.Tag == ldap.FilterLE && v.Norm <= want {
+		if f.Tag == ldap.FilterLE && c <= 0 {
 			return true
 		}
 	}

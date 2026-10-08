@@ -21,7 +21,13 @@ import (
 // bundled core schema, and TLS. The point is to compare
 // protocol behaviour, so anything that would make the two
 // servers differ for configuration reasons is left out.
+// cosine and nis come along because the comparison needs an
+// attribute with an ORDERING rule of its own: uidNumber declares
+// integerOrderingMatch, and core.schema has nothing that does.
+// nis.schema depends on cosine.schema.
 const slapdConf = `include ` + schemaDir + `/core.schema
+include ` + schemaDir + `/cosine.schema
+include ` + schemaDir + `/nis.schema
 
 pidfile /data/slapd.pid
 argsfile /data/slapd.args

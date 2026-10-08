@@ -55,6 +55,63 @@ var seedLDIF = []struct {
 			{Type: "cn", Values: []string{"Bob"}},
 			{Type: "sn", Values: []string{"Brown"}},
 		}},
+	// Three devices carrying serialNumber, whose matching
+	// rule is caseIgnoreMatch over a DirectoryString, and
+	// telephoneNumber on the organizationalRole entries
+	// below. The values are chosen so that a string
+	// comparison and a numeric one disagree: "9" sorts after
+	// "10" as text and before it as a number.
+	{"cn=dev9,ou=people,dc=example,dc=com",
+		[]store.Attribute{
+			{Type: "objectClass",
+				Values: []string{"device"}},
+			{Type: "cn", Values: []string{"dev9"}},
+			{Type: "serialNumber",
+				Values: []string{"9"}},
+		}},
+	{"cn=dev10,ou=people,dc=example,dc=com",
+		[]store.Attribute{
+			{Type: "objectClass",
+				Values: []string{"device"}},
+			{Type: "cn", Values: []string{"dev10"}},
+			{Type: "serialNumber",
+				Values: []string{"10"}},
+		}},
+	{"cn=dev100,ou=people,dc=example,dc=com",
+		[]store.Attribute{
+			{Type: "objectClass",
+				Values: []string{"device"}},
+			{Type: "cn", Values: []string{"dev100"}},
+			{Type: "serialNumber",
+				Values: []string{"100"}},
+		}},
+	// uidNumber declares ORDERING integerOrderingMatch, so a
+	// >= filter on it orders numerically: 9 < 10 < 100, where
+	// a string comparison would put "10" and "100" before
+	// "9". extensibleObject carries the attribute, since
+	// device does not permit it and posixAccount would drag
+	// in several more MUST attributes.
+	{"cn=num9,ou=people,dc=example,dc=com",
+		[]store.Attribute{
+			{Type: "objectClass", Values: []string{
+				"device", "extensibleObject"}},
+			{Type: "cn", Values: []string{"num9"}},
+			{Type: "uidNumber", Values: []string{"9"}},
+		}},
+	{"cn=num10,ou=people,dc=example,dc=com",
+		[]store.Attribute{
+			{Type: "objectClass", Values: []string{
+				"device", "extensibleObject"}},
+			{Type: "cn", Values: []string{"num10"}},
+			{Type: "uidNumber", Values: []string{"10"}},
+		}},
+	{"cn=num100,ou=people,dc=example,dc=com",
+		[]store.Attribute{
+			{Type: "objectClass", Values: []string{
+				"device", "extensibleObject"}},
+			{Type: "cn", Values: []string{"num100"}},
+			{Type: "uidNumber", Values: []string{"100"}},
+		}},
 }
 
 // OpenStore builds a seeded Olivine store for the harness.
@@ -114,14 +171,30 @@ func harnessSchema() (*schema.Registry, error) {
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(root, "openldap", "servers",
-		"slapd", "schema", "core.schema")
-	f, err := os.Open(path)
+	dir := filepath.Join(root, "openldap", "servers",
+		"slapd", "schema")
+	// The same set the oracle's slapd.conf includes, in the
+	// same order: nis.schema depends on cosine.schema.
+	for _, name := range []string{
+		"core.schema", "cosine.schema", "nis.schema",
+	} {
+		if err := loadSchemaFile(reg, dir, name); err != nil {
+			return nil, err
+		}
+	}
+	return reg, nil
+}
+
+// loadSchemaFile reads one .schema file into reg.
+func loadSchemaFile(
+	reg *schema.Registry, dir, name string,
+) error {
+	f, err := os.Open(filepath.Join(dir, name))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
-	return reg, schema.LoadFile(reg, f)
+	return schema.LoadFile(reg, f)
 }
 
 // openGolden connects to a scratch schema named for the harness.

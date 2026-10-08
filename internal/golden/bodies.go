@@ -94,3 +94,40 @@ func addBody(dn string, attrs []attr) []byte {
 	}
 	return out
 }
+
+// avaFilter writes a filter carrying an
+// AttributeValueAssertion, which is the shape of equality, >=,
+// <= and approx.
+func avaFilter(
+	tag ber.Tag, attr, value string,
+) func(*ber.Encoder) {
+	return func(e *ber.Encoder) {
+		e.Begin(tag)
+		e.String(ber.TagOctetString, attr)
+		e.String(ber.TagOctetString, value)
+		e.End()
+	}
+}
+
+// substringFilter writes a substrings filter. Empty initial or
+// final parts are omitted, as RFC 4511 4.5.1.7.2 expects.
+func substringFilter(
+	attr, initial string, any []string, final string,
+) func(*ber.Encoder) {
+	return func(e *ber.Encoder) {
+		e.Begin(ldap.FilterSubstrings)
+		e.String(ber.TagOctetString, attr)
+		e.Begin(ber.TagSequence)
+		if initial != "" {
+			e.String(ldap.SubstringInitial, initial)
+		}
+		for _, a := range any {
+			e.String(ldap.SubstringAny, a)
+		}
+		if final != "" {
+			e.String(ldap.SubstringFinal, final)
+		}
+		e.End()
+		e.End()
+	}
+}

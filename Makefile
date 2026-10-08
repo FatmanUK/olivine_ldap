@@ -68,7 +68,8 @@ golden-data:
 	@dsn=$$(./scripts/postgres-up.sh) && \
 		OLIVINE_TEST_DSN="$$dsn" \
 		$(GO) test -tags golden -count=1 -v \
-			-run TestGoldenData ./internal/golden/
+			-run 'TestGoldenData|Vacuous' \
+			./internal/golden/
 
 clean:
 	$(GO) clean ./...

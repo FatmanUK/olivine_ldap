@@ -108,29 +108,45 @@ func resultFor(err error) ldap.Result {
 	if res, ok := violationResult(err); ok {
 		return res
 	}
+	if res, ok := sentinelResult(err); ok {
+		return res
+	}
+	return typedResult(err)
+}
+
+// sentinelResult maps the store's own errors.
+func sentinelResult(err error) (ldap.Result, bool) {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		return ldap.Result{Code: ldap.NoSuchObject}
+		return ldap.Result{Code: ldap.NoSuchObject}, true
 	case errors.Is(err, ErrExists):
-		return ldap.Result{Code: ldap.AlreadyExists}
+		return ldap.Result{Code: ldap.AlreadyExists}, true
 	case errors.Is(err, ErrNoParent),
 		errors.Is(err, ErrOutOfScope):
 		// RFC 4511 4.7: an add whose parent is absent is
 		// noSuchObject, not a naming violation.
-		return ldap.Result{Code: ldap.NoSuchObject}
+		return ldap.Result{Code: ldap.NoSuchObject}, true
 	case errors.Is(err, ErrNotLeaf):
-		return ldap.Result{Code: ldap.NotAllowedOnNonLeaf}
+		return ldap.Result{
+			Code: ldap.NotAllowedOnNonLeaf}, true
 	case errors.Is(err, ErrValueExists):
-		return ldap.Result{Code: ldap.TypeOrValueExists}
+		return ldap.Result{
+			Code: ldap.TypeOrValueExists}, true
 	case errors.Is(err, ErrNoSuchValue):
-		return ldap.Result{Code: ldap.NoSuchAttribute}
-	case errors.Is(err, dn.ErrUnknownAttr):
-		return ldap.Result{Code: ldap.UndefinedType}
-	case errors.Is(err, dn.ErrSyntax),
-		errors.Is(err, dn.ErrEmpty),
-		errors.Is(err, dn.ErrEmptyValue),
-		errors.Is(err, dn.ErrBinaryValue):
-		return ldap.Result{Code: ldap.InvalidDNSyntax}
+		return ldap.Result{
+			Code: ldap.NoSuchAttribute}, true
+	}
+	return ldap.Result{}, false
+}
+
+// typedResult maps the errors that carry detail.
+func typedResult(err error) ldap.Result {
+	var bad *SyntaxError
+	if errors.As(err, &bad) {
+		return ldap.Result{
+			Code:       ldap.InvalidSyntax,
+			Diagnostic: bad.Type,
+		}
 	}
 	var unknown *UnknownAttributeError
 	if errors.As(err, &unknown) {
@@ -138,6 +154,20 @@ func resultFor(err error) ldap.Result {
 			Code:       ldap.UndefinedType,
 			Diagnostic: unknown.Type,
 		}
+	}
+	return dnResult(err)
+}
+
+// dnResult maps DN parsing failures.
+func dnResult(err error) ldap.Result {
+	switch {
+	case errors.Is(err, dn.ErrUnknownAttr):
+		return ldap.Result{Code: ldap.UndefinedType}
+	case errors.Is(err, dn.ErrSyntax),
+		errors.Is(err, dn.ErrEmpty),
+		errors.Is(err, dn.ErrEmptyValue),
+		errors.Is(err, dn.ErrBinaryValue):
+		return ldap.Result{Code: ldap.InvalidDNSyntax}
 	}
 	return ldap.Result{Code: ldap.Other}
 }

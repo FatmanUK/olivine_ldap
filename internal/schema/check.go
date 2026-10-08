@@ -62,7 +62,29 @@ func (r *Registry) Check(e Entry) error {
 	if err := checkRequired(e, required); err != nil {
 		return err
 	}
+	// extensibleObject permits any user attribute, so the
+	// allowed check is skipped entirely. schema_check.c:587-589
+	// returns LDAP_SUCCESS the moment it sees the class:
+	// "extensibleObject allows all". MUST is still enforced —
+	// the short-circuit is only on what is *permitted*.
+	if hasExtensibleObject(classes) {
+		return nil
+	}
 	return checkAllowed(e, allowed)
+}
+
+// OIDExtensibleObject is the class that permits any attribute,
+// from core.schema.
+const OIDExtensibleObject = "1.3.6.1.4.1.1466.101.120.111"
+
+// hasExtensibleObject reports whether the class list carries it.
+func hasExtensibleObject(classes []*ObjectClass) bool {
+	for _, oc := range classes {
+		if oc.OID == OIDExtensibleObject {
+			return true
+		}
+	}
+	return false
 }
 
 // checkTypesDefined refuses an attribute no schema defines.

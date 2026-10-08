@@ -84,6 +84,127 @@ func DataScripts() []Script {
 		missingBaseScript(),
 		compareScript(),
 		badSchemaAddScript(),
+		substringScript(),
+		orderingScript(),
+		caseExactScript(),
+		integerOrderingScript(),
+	}
+}
+
+// integerOrderingScript orders under integerOrderingMatch.
+//
+// uidNumber declares it, so 9 < 10 < 100. A string comparison —
+// which is what this did before internal/schema carried the
+// matching rules — puts "10" and "100" below "9", and every one
+// of these three filters would return the wrong set.
+func integerOrderingScript() Script {
+	return Script{
+		Name: "filter-integer-ordering",
+		Requests: []Request{
+			{Name: "uidNumber>=10",
+				Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					avaFilter(ldap.FilterGE,
+						"uidNumber", "10"),
+					[]string{"uidNumber"})},
+			{Name: "uidNumber<=10",
+				Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					avaFilter(ldap.FilterLE,
+						"uidNumber", "10"),
+					[]string{"uidNumber"})},
+			{Name: "uidNumber=9", Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					equalityFilter(
+						"uidNumber", "9"),
+					[]string{"uidNumber"})},
+		},
+	}
+}
+
+// substringScript exercises initial, any and final fragments.
+//
+// The fragments are normalised under the attribute's substrings
+// rule with the use that says which fragment they are, because
+// UTF8StringNormalize trims each differently. Getting that wrong
+// drops asserted spaces, which is invisible until compared.
+func substringScript() Script {
+	return Script{
+		Name: "filter-substrings",
+		Requests: []Request{
+			{Name: "cn=dev*", Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					substringFilter("cn", "dev",
+						nil, ""),
+					[]string{"cn"})},
+			{Name: "cn=*10", Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					substringFilter("cn", "",
+						nil, "10"),
+					[]string{"cn"})},
+			{Name: "cn=*ev1*", Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					substringFilter("cn", "",
+						[]string{"ev1"}, ""),
+					[]string{"cn"})},
+		},
+	}
+}
+
+// orderingScript checks >= and <=.
+//
+// serialNumber's ordering rule is a string comparison, so "9" is
+// greater than "10" here. That is the right answer and the
+// counter-intuitive one, which is exactly why it is compared
+// against the C rather than asserted from memory.
+func orderingScript() Script {
+	return Script{
+		Name: "filter-ordering",
+		Requests: []Request{
+			{Name: "serialNumber>=10",
+				Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					avaFilter(ldap.FilterGE,
+						"serialNumber", "10"),
+					[]string{"serialNumber"})},
+			{Name: "serialNumber<=10",
+				Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					avaFilter(ldap.FilterLE,
+						"serialNumber", "10"),
+					[]string{"serialNumber"})},
+		},
+	}
+}
+
+// caseExactScript checks that a case-sensitive filter on a
+// caseIgnore attribute still matches, and that spacing is
+// collapsed on both sides.
+func caseExactScript() Script {
+	return Script{
+		Name: "filter-spacing",
+		Requests: []Request{
+			{Name: "cn=  Alice  ", Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					equalityFilter("cn",
+						"  Alice  "),
+					[]string{"cn"})},
+			{Name: "sn=aNdErSoN", Op: ldap.ReqSearch,
+				Body: searchBody(baseDN,
+					ldap.ScopeSubtree,
+					equalityFilter("sn",
+						"aNdErSoN"),
+					[]string{"sn"})},
+		},
 	}
 }
 
