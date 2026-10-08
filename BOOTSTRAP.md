@@ -45,7 +45,14 @@ that have aged worst in the C:
   (~5 minutes, ~97 MB); `make golden` drives identical bytes through real
   slapd and through Olivine in-process and diffs the transcripts. It is
   green, and it has already corrected two mistakes — see §3.1.
-- `internal/{schema,dn,store}` are still `doc.go` only.
+- **`internal/schema` parses the real thing.** All 15 `.schema` files in the
+  submodule load (1,133 attribute types, 85 object classes), and the parser
+  reads all 464 definitions slapd itself emits from `cn=Subschema` — captured
+  as testdata by `scripts/capture-subschema.sh`, which is the sharpest oracle
+  short of a live comparison, since slapd's output includes the operational
+  attributes hardcoded in `schema_init.c` that appear in no `.schema` file.
+  84.6% coverage.
+- `internal/{dn,store}` are still `doc.go` only.
 - `make lint`, `make test`, `make race`, `make build` and `make golden` all
   pass.
 - `make golden` and `make golden-build` exist and fail deliberately,
@@ -67,9 +74,11 @@ authoritative for sequencing. In brief:
 4. ~~The protocol layer and the TLS listener.~~ Done, `59bd65f` and this
    commit.
 5. ~~The golden harness, `internal/golden`.~~ Done — this commit.
-6. **Schema subsystem** — attribute types, object classes, syntaxes,
-   matching rules. `schema_init.c` is 6,979 lines and the normalisation
-   rules in it are where behaviour compatibility is won or lost.
+6. ~~Schema subsystem.~~ Parsing and the registry done — this commit.
+   Still outstanding within it: syntaxes and matching rules as *behaviour*
+   (`schema_init.c`'s normalisation and comparison functions), which is where
+   behaviour compatibility is actually won or lost. The definitions are
+   parsed; the semantics are not implemented.
 7. **DN handling and the Postgres store.** `dn.c` normalisation first, since
    the store's keys depend on it.
 8. **Operations** — bind, search, add/modify/delete/modrdn, compare,
@@ -123,6 +132,23 @@ upstream behaviours that are easy to get wrong:
   branches on `op->o_conn->c_is_tls != 0`, which for Olivine is always true.
   **The golden harness found this**; it had been a guess, and both the code
   and its unit test asserted the wrong code until the C was asked directly.
+- **slapd silently ignores an unknown directive in a schema file.**
+  `slaptest` reports success and the definition is simply absent. Verified by
+  feeding the oracle a deliberately misspelled keyword: exit 0, and the
+  attribute unregistered. This matters because **upstream's own
+  `dsee.schema:96` says `attributeype`**, so `targetUniqueId` is missing from
+  every slapd that loads that file. Olivine skips such definitions rather
+  than refusing the file, and records them in `Registry.Skipped` so the
+  silence is not total.
+- **`dsee.schema` and `dyngroup.schema` cannot both be loaded.** Both define
+  the OID macro `NetscapeRoot`, and slapd refuses a redefinition:
+  `objectidentifier: "NetscapeRoot" previously defined "2.16.840.1.113730"`.
+  Olivine refuses it too, so the clash stays visible instead of resolving to
+  whichever file loaded last.
+- **OID macros are an OpenLDAP extension**, not RFC 4512, and they nest:
+  `objectIdentifier Attr Base:1` then `attributetype ( Attr:3 ... )`.
+- **`msuser.schema` writes `SYNTAX` in quotes**, which the ABNF forbids and
+  slapd accepts.
 - **slapd parses the Sync control before deciding whether it supports it**,
   so a valueless Sync control draws `protocolError` "Sync control value is
   absent" rather than `unavailableCriticalExtension`. A test for unsupported
