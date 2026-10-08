@@ -122,4 +122,25 @@ if ! printf '%s' "$out" | grep -q "dc=example,dc=com"; then
 	podman logs "$srv" 2>&1 | tail -20 >&2
 	exit 1
 fi
+# And the configuration tree, which only the administrator sees.
+echo "pod-run: reading cn=config as the administrator"
+cfg=$(podman run --rm --network "$net" \
+	--entrypoint /bin/sh "$oracle" -c \
+	"LDAPTLS_REQCERT=never /opt/openldap/bin/ldapsearch \
+		-H ldaps://${srv}:6360 -x \
+		-D 'cn=root,dc=example,dc=com' -w smoketest \
+		-b 'cn=config' -s sub -LLL '(objectClass=*)' \
+		2>&1") || true
+
+printf '%s\n' "$cfg" | sed 's/^/  /' | head -8
+if ! printf '%s' "$cfg" | grep -q "olcSuffix"; then
+	echo "pod-run: cn=config did not answer" >&2
+	exit 1
+fi
+# A hash must never come back, even to the administrator.
+if printf '%s' "$cfg" | grep -q "ARGON2"; then
+	echo "pod-run: a password hash leaked from cn=config" >&2
+	exit 1
+fi
+
 echo "pod-run: ok"

@@ -30,13 +30,13 @@ type rootDSEAttr struct {
 // subtree search from an empty base, so the root DSE is not the
 // top of a walkable tree.
 func (s *Store) rootDSE(
-	req *ldap.SearchRequest,
+	req *ldap.SearchRequest, who Identity,
 ) ldap.SearchEntry {
 	e := ldap.SearchEntry{DN: ""}
 	if onlyNoAttributes(req.Attributes) {
 		return e
 	}
-	for _, a := range s.rootDSEAttrs() {
+	for _, a := range s.rootDSEAttrs(who) {
 		if !rootDSEWanted(req.Attributes, a) {
 			continue
 		}
@@ -62,10 +62,17 @@ var supportedControls = []string{
 //
 // Deliberately absent: supportedExtension, because Olivine
 // implements no extended operation and advertising StartTLS while
-// refusing it would be a lie; supportedFeatures, for the same
-// reason; and configContext, because cn=config does not exist yet.
-func (s *Store) rootDSEAttrs() []rootDSEAttr {
-	return []rootDSEAttr{
+// refusing it would be a lie, and supportedFeatures for the same
+// reason.
+//
+// configContext *is* advertised, because the tree exists — but
+// only to a caller who can read it. Naming a tree that answers
+// noSuchObject to the reader would be a worse answer than saying
+// nothing.
+func (s *Store) rootDSEAttrs(
+	who Identity,
+) []rootDSEAttr {
+	out := []rootDSEAttr{
 		{"objectClass", rootDSEClasses, false},
 		{"namingContexts", s.Suffixes(), true},
 		{"supportedControl", supportedControls, true},
@@ -75,6 +82,13 @@ func (s *Store) rootDSEAttrs() []rootDSEAttr {
 		{"structuralObjectClass",
 			[]string{"OpenLDAProotDSE"}, true},
 	}
+	if s.isRoot(who) {
+		out = append(out, rootDSEAttr{
+			"configContext",
+			[]string{ConfigDN}, true,
+		})
+	}
+	return out
 }
 
 // rootDSEWanted reports whether one root DSE attribute belongs in

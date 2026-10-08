@@ -45,7 +45,13 @@ func (s *Store) searchEntries(
 	req *ldap.SearchRequest, who Identity,
 ) ([]ldap.SearchEntry, ldap.Result) {
 	if isRootDSERequest(req) {
-		return s.searchRootDSE(req)
+		return s.searchRootDSE(req, who)
+	}
+	// cn=config is not in the database: it is a read-only
+	// projection of the environment, so it is answered before
+	// the base-must-exist check that follows.
+	if cfg, ok := s.configBase(req.BaseObject); ok {
+		return s.searchConfig(req, who, cfg)
 	}
 	// The base must exist, scope notwithstanding: RFC 4511
 	// 4.5.3 gives noSuchObject when it does not, even for a
@@ -124,12 +130,12 @@ func (s *Store) visible(
 // walkable tree. A client enumerating the directory has to read
 // namingContexts and start again from there.
 func (s *Store) searchRootDSE(
-	req *ldap.SearchRequest,
+	req *ldap.SearchRequest, who Identity,
 ) ([]ldap.SearchEntry, ldap.Result) {
 	if req.Scope != ldap.ScopeBase {
 		return nil, ldap.Result{Code: ldap.NoSuchObject}
 	}
-	return []ldap.SearchEntry{s.rootDSE(req)},
+	return []ldap.SearchEntry{s.rootDSE(req, who)},
 		ldap.Result{Code: ldap.Success}
 }
 
@@ -152,6 +158,9 @@ func (s *Store) BackendAdd(
 	// invalidSyntax (21), and one with a valid schema answers
 	// strongerAuthRequired (8). Checking access first gives
 	// insufficientAccess and differs from the C on both.
+	if s.isConfigTarget(req.Entry) {
+		return refuseConfigWrite()
+	}
 	if res, ok := s.denySchema(attrs); !ok {
 		return res
 	}
@@ -186,6 +195,9 @@ func (s *Store) denySchema(
 func (s *Store) BackendDelete(
 	rawDN string, who Identity,
 ) ldap.Result {
+	if s.isConfigTarget(rawDN) {
+		return refuseConfigWrite()
+	}
 	if res, ok := requireAuthenticatedUpdate(who); !ok {
 		return res
 	}
@@ -206,6 +218,9 @@ func (s *Store) BackendDelete(
 func (s *Store) BackendModify(
 	req *ldap.ModifyRequest, who Identity,
 ) ldap.Result {
+	if s.isConfigTarget(req.Object) {
+		return refuseConfigWrite()
+	}
 	if res, ok := requireAuthenticatedUpdate(who); !ok {
 		return res
 	}

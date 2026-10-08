@@ -72,8 +72,11 @@ that have aged worst in the C:
 - **Paged results work**, compared against slapd by `make golden-paged` across
   four page sizes. It is the one control Olivine implements, and the only one
   the root DSE advertises.
-- Not implemented: abandon's actual effect, SASL, `cn=config`, and the ACL
-  features listed in §3.3.
+- **`cn=config` is a read-only projection of the environment**, visible only
+  to the administrator, verified through the container with upstream's own
+  `ldapsearch`.
+- Not implemented: abandon's actual effect, SASL, and the ACL features listed
+  in §3.3.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
