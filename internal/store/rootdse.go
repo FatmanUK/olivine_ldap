@@ -48,17 +48,27 @@ func (s *Store) rootDSE(
 	return e
 }
 
+// supportedControls are the controls Olivine implements, and so
+// the only ones it advertises.
+//
+// Advertising a control that is not implemented is worse than
+// advertising none: a client reads this to decide what to send, and
+// would then send something that fails.
+var supportedControls = []string{
+	ldap.OIDPagedResults,
+}
+
 // rootDSEAttrs lists everything the root DSE can carry.
 //
 // Deliberately absent: supportedExtension, because Olivine
 // implements no extended operation and advertising StartTLS while
-// refusing it would be a lie; supportedControl and
-// supportedFeatures, for the same reason; and configContext,
-// because cn=config does not exist yet.
+// refusing it would be a lie; supportedFeatures, for the same
+// reason; and configContext, because cn=config does not exist yet.
 func (s *Store) rootDSEAttrs() []rootDSEAttr {
 	return []rootDSEAttr{
 		{"objectClass", rootDSEClasses, false},
 		{"namingContexts", s.Suffixes(), true},
+		{"supportedControl", supportedControls, true},
 		{"supportedLDAPVersion", []string{"3"}, true},
 		{"subschemaSubentry",
 			[]string{subschemaDN}, true},

@@ -59,7 +59,7 @@ func TestBackendSearchFilters(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, res := s.BackendSearch(searchReq(
+			got, res, _ := s.BackendSearch(searchReq(
 				base, ldap.ScopeSubtree, c.filter),
 				anyone)
 			if res.Code != ldap.Success {
@@ -79,7 +79,7 @@ func TestEmptyAndOr(t *testing.T) {
 	seed(t, s)
 	base := "dc=example,dc=com"
 
-	got, res := s.BackendSearch(searchReq(base,
+	got, res, _ := s.BackendSearch(searchReq(base,
 		ldap.ScopeSubtree,
 		ldap.Filter{Tag: ldap.FilterAnd}), anyone)
 	if res.Code != ldap.Success {
@@ -89,7 +89,7 @@ func TestEmptyAndOr(t *testing.T) {
 		t.Errorf("empty and matched %d, want all 5",
 			len(got))
 	}
-	got, res = s.BackendSearch(searchReq(base,
+	got, res, _ = s.BackendSearch(searchReq(base,
 		ldap.ScopeSubtree,
 		ldap.Filter{Tag: ldap.FilterOr}), anyone)
 	if res.Code != ldap.Success {
@@ -105,7 +105,7 @@ func TestEmptyAndOr(t *testing.T) {
 func TestBackendSearchMissingBase(t *testing.T) {
 	s := testStore(t)
 	seed(t, s)
-	_, res := s.BackendSearch(searchReq(
+	_, res, _ := s.BackendSearch(searchReq(
 		"dc=absent,dc=com", ldap.ScopeSubtree,
 		presentFilter("objectClass")), anyone)
 	if res.Code != ldap.NoSuchObject {
@@ -120,7 +120,7 @@ func TestProjectionNoAttributes(t *testing.T) {
 	req := searchReq("cn=Alice,ou=people,dc=example,dc=com",
 		ldap.ScopeBase, presentFilter("objectClass"))
 	req.Attributes = []string{ldap.NoAttributes}
-	got, res := s.BackendSearch(req, anyone)
+	got, res, _ := s.BackendSearch(req, anyone)
 	if res.Code != ldap.Success {
 		t.Fatal(res.Code)
 	}
@@ -142,7 +142,7 @@ func TestProjectionSelectsAttributes(t *testing.T) {
 	req := searchReq("cn=Alice,ou=people,dc=example,dc=com",
 		ldap.ScopeBase, presentFilter("objectClass"))
 	req.Attributes = []string{"sn"}
-	got, _ := s.BackendSearch(req, anyone)
+	got, _, _ := s.BackendSearch(req, anyone)
 	if len(got) != 1 || len(got[0].Attributes) != 1 {
 		t.Fatalf("got %+v", got)
 	}
@@ -158,7 +158,7 @@ func TestProjectionTypesOnly(t *testing.T) {
 	req := searchReq("cn=Alice,ou=people,dc=example,dc=com",
 		ldap.ScopeBase, presentFilter("objectClass"))
 	req.TypesOnly = true
-	got, _ := s.BackendSearch(req, anyone)
+	got, _, _ := s.BackendSearch(req, anyone)
 	if len(got) != 1 {
 		t.Fatalf("%d entries", len(got))
 	}

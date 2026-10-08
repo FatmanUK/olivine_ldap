@@ -37,7 +37,7 @@ func has(e ldap.SearchEntry, typ string) bool {
 // nothing else, matching slapd.
 func TestRootDSEPlainSearch(t *testing.T) {
 	s := testStore(t)
-	got, res := s.BackendSearch(rootSearch(), anyone)
+	got, res, _ := s.BackendSearch(rootSearch(), anyone)
 	if res.Code != ldap.Success || len(got) != 1 {
 		t.Fatalf("code = %v, %d entries",
 			res.Code, len(got))
@@ -53,7 +53,7 @@ func TestRootDSEPlainSearch(t *testing.T) {
 // why slapd's "+" output carries no objectClass line.
 func TestRootDSEOperationalOnly(t *testing.T) {
 	s := testStore(t)
-	got, _ := s.BackendSearch(rootSearch("+"), anyone)
+	got, _, _ := s.BackendSearch(rootSearch("+"), anyone)
 	if len(got) != 1 {
 		t.Fatalf("%d entries", len(got))
 	}
@@ -74,7 +74,7 @@ func TestRootDSENamedOperationalAttribute(t *testing.T) {
 	if err := s.AddSuffix("dc=example,dc=com"); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := s.BackendSearch(
+	got, _, _ := s.BackendSearch(
 		rootSearch("namingContexts"), anyone)
 	if len(got) != 1 {
 		t.Fatalf("%d entries", len(got))
@@ -97,10 +97,42 @@ func TestRootDSEBaseScopeOnly(t *testing.T) {
 	} {
 		r := rootSearch()
 		r.Scope = scope
-		_, res := s.BackendSearch(r, anyone)
+		_, res, _ := s.BackendSearch(r, anyone)
 		if res.Code != ldap.NoSuchObject {
 			t.Errorf("%v: code = %v, want noSuchObject",
 				scope, res.Code)
+		}
+	}
+}
+
+// The root DSE advertises only what is implemented. A client reads
+// supportedControl to decide what to send, so listing something
+// unimplemented is worse than listing nothing.
+func TestRootDSEAdvertisesOnlyWhatWorks(t *testing.T) {
+	s := testStore(t)
+	got, _, _ := s.BackendSearch(
+		rootSearch("supportedControl"), anyone)
+	if len(got) != 1 {
+		t.Fatalf("%d entries", len(got))
+	}
+	var values []string
+	for _, a := range got[0].Attributes {
+		if a.Type == "supportedControl" {
+			values = a.Values
+		}
+	}
+	if len(values) != 1 ||
+		values[0] != ldap.OIDPagedResults {
+		t.Errorf("supportedControl = %v, want just the "+
+			"paged results OID", values)
+	}
+	// StartTLS is refused, so it must not be advertised.
+	for _, a := range got[0].Attributes {
+		for _, v := range a.Values {
+			if v == ldap.OIDStartTLS {
+				t.Error("StartTLS advertised " +
+					"but refused")
+			}
 		}
 	}
 }

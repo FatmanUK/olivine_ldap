@@ -85,6 +85,11 @@ func IsCriticalUnsupported(cs []Control) (string, bool) {
 }
 
 // supported lists the control OIDs this server implements.
-// Empty for now: the controls arrive with the operations at
-// plan step 8, and the Sync controls never will.
-var supported = map[string]bool{}
+//
+// A critical control absent from here is refused with
+// unavailableCriticalExtension, as RFC 4511 4.1.11 requires. The
+// Sync controls will never appear: syncrepl is not ported, because
+// replication is Postgres's job.
+var supported = map[string]bool{
+	OIDPagedResults: true,
+}

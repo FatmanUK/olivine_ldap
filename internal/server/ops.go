@@ -72,13 +72,14 @@ func (c *conn) doSearch(m *ldap.Message) bool {
 	if err != nil {
 		return c.protocolError(m, err)
 	}
+	req.Controls = m.Controls
 	if !req.Scope.Valid() {
 		return c.fail(m, ldap.Result{
 			Code:       ldap.ProtocolError,
 			Diagnostic: "invalid scope",
 		})
 	}
-	entries, res := c.srv.backend.Search(
+	entries, res, controls := c.srv.backend.Search(
 		req, c.identity())
 	for _, e := range entries {
 		packet, err := ldap.EncodeSearchEntry(m.ID, e)
@@ -89,7 +90,20 @@ func (c *conn) doSearch(m *ldap.Message) bool {
 			return false
 		}
 	}
-	return c.fail(m, res)
+	return c.result(m, res, controls)
+}
+
+// result sends a result message carrying response controls.
+func (c *conn) result(
+	m *ldap.Message, r ldap.Result,
+	controls []ldap.Control,
+) bool {
+	packet, err := ldap.EncodeResultWithControls(
+		m.ID, responseTag(m.Op), r, controls)
+	if err != nil {
+		return false
+	}
+	return c.send(packet) == nil
 }
 
 // protocolError answers a request that would not decode.

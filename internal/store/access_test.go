@@ -34,14 +34,14 @@ func TestDiscloseSwitchesTheRefusal(t *testing.T) {
 	seed(t, s)
 
 	s.SetPolicy(policy(t, `access to * by * none`))
-	_, res := s.BackendSearch(baseSearch(), anyone)
+	_, res, _ := s.BackendSearch(baseSearch(), anyone)
 	if res.Code != ldap.NoSuchObject {
 		t.Errorf("none: code = %v, want noSuchObject",
 			res.Code)
 	}
 
 	s.SetPolicy(policy(t, `access to * by * disclose`))
-	_, res = s.BackendSearch(baseSearch(), anyone)
+	_, res, _ = s.BackendSearch(baseSearch(), anyone)
 	if res.Code != ldap.InsufficientAccess {
 		t.Errorf("disclose: code = %v, want "+
 			"insufficientAccess", res.Code)
@@ -56,7 +56,7 @@ func TestSearchWithoutRead(t *testing.T) {
 	seed(t, s)
 
 	s.SetPolicy(policy(t, `access to * by * search`))
-	got, res := s.BackendSearch(baseSearch(), anyone)
+	got, res, _ := s.BackendSearch(baseSearch(), anyone)
 	if res.Code != ldap.Success {
 		t.Errorf("search: code = %v, want success",
 			res.Code)
@@ -66,7 +66,7 @@ func TestSearchWithoutRead(t *testing.T) {
 	}
 
 	s.SetPolicy(policy(t, `access to * by * read`))
-	got, res = s.BackendSearch(baseSearch(), anyone)
+	got, res, _ = s.BackendSearch(baseSearch(), anyone)
 	if res.Code != ldap.Success || len(got) != 1 {
 		t.Errorf("read: code = %v, %d entries",
 			res.Code, len(got))
@@ -83,7 +83,7 @@ func TestPerAttributeHiding(t *testing.T) {
 	s.SetPolicy(policy(t,
 		`access to attrs=description by * none
 access to * by * read`))
-	got, _ := s.BackendSearch(baseSearch(), anyone)
+	got, _, _ := s.BackendSearch(baseSearch(), anyone)
 	if len(got) != 1 {
 		t.Fatalf("%d entries", len(got))
 	}
@@ -251,7 +251,7 @@ access to * by * none`))
 		t.Errorf("code = %v, want success", res.Code)
 	}
 	// And the entry is still not readable.
-	_, sres := s.BackendSearch(searchReq(
+	_, sres, _ := s.BackendSearch(searchReq(
 		"cn=admin,dc=example,dc=com", ldap.ScopeBase,
 		presentFilter("objectClass")), anyone)
 	if sres.Code == ldap.Success {
@@ -266,14 +266,14 @@ func TestSelfMatchesWhenBound(t *testing.T) {
 	s.SetPolicy(policy(t,
 		`access to * by self read by * none`))
 
-	_, res := s.BackendSearch(baseSearch(), anyone)
+	_, res, _ := s.BackendSearch(baseSearch(), anyone)
 	if res.Code == ldap.Success {
 		t.Error("anonymous should be refused")
 	}
 	// The normalised form, which is what a bind would have
 	// recorded: a client's own spelling does not compare.
 	me := Identity{DN: "cn=alice,ou=people,dc=example,dc=com"}
-	got, res := s.BackendSearch(baseSearch(), me)
+	got, res, _ := s.BackendSearch(baseSearch(), me)
 	if res.Code != ldap.Success || len(got) != 1 {
 		t.Errorf("self: code = %v, %d entries",
 			res.Code, len(got))

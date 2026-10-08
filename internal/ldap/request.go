@@ -19,6 +19,12 @@ type SearchRequest struct {
 	TypesOnly    bool
 	Filter       Filter
 	Attributes   []string
+	// Controls are the request's controls, copied from the
+	// enclosing message. They live here rather than being
+	// looked up from the message because the backend needs them
+	// — paged results is a control — and the backend is not
+	// given the envelope.
+	Controls []Control
 }
 
 // ParseSearchRequest decodes a SearchRequest body.

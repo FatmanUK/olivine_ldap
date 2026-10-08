@@ -25,6 +25,24 @@ import (
 //	                          that are themselves readable
 func (s *Store) BackendSearch(
 	req *ldap.SearchRequest, who Identity,
+) ([]ldap.SearchEntry, ldap.Result, []ldap.Control) {
+	paged, hasPaged, err := ldap.FindPaged(req.Controls)
+	if err != nil {
+		return nil, ldap.Result{
+			Code:       ldap.ProtocolError,
+			Diagnostic: err.Error(),
+		}, nil
+	}
+	entries, res := s.searchEntries(req, who)
+	if res.Code != ldap.Success || !hasPaged {
+		return entries, res, nil
+	}
+	return s.page(entries, paged)
+}
+
+// searchEntries does the search itself, before paging.
+func (s *Store) searchEntries(
+	req *ldap.SearchRequest, who Identity,
 ) ([]ldap.SearchEntry, ldap.Result) {
 	if isRootDSERequest(req) {
 		return s.searchRootDSE(req)

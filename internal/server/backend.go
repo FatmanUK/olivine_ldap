@@ -37,8 +37,10 @@ type Backend interface {
 	// Search returns the matching entries. Entries are sent
 	// before the result, so a non-Success Result with entries
 	// already returned is still reported after them.
+	// The controls returned travel with the result, which is
+	// how paged results hands back its cookie.
 	Search(*ldap.SearchRequest, ldap.Identity) (
-		[]ldap.SearchEntry, ldap.Result)
+		[]ldap.SearchEntry, ldap.Result, []ldap.Control)
 
 	Add(*ldap.AddRequest, ldap.Identity) ldap.Result
 	Delete(dn string, who ldap.Identity) ldap.Result

@@ -26,7 +26,7 @@ func TestSizeLimitExactlyAtLimitIsSuccess(t *testing.T) {
 	s.SetLimits(Limits{Size: 5})
 
 	// The fixture holds exactly five entries.
-	got, res := s.BackendSearch(sizeSearch(0), anyone)
+	got, res, _ := s.BackendSearch(sizeSearch(0), anyone)
 	if res.Code != ldap.Success {
 		t.Errorf("code = %v, want success", res.Code)
 	}
@@ -40,7 +40,7 @@ func TestSizeLimitOverrun(t *testing.T) {
 	seed(t, s)
 	s.SetLimits(Limits{Size: 2})
 
-	got, res := s.BackendSearch(sizeSearch(0), anyone)
+	got, res, _ := s.BackendSearch(sizeSearch(0), anyone)
 	if res.Code != ldap.SizeLimitExceeded {
 		t.Errorf("code = %v, want sizeLimitExceeded",
 			res.Code)
@@ -69,7 +69,7 @@ func TestSizeLimitTakesTheLower(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, _ := s.BackendSearch(
+			got, _, _ := s.BackendSearch(
 				sizeSearch(c.request), anyone)
 			if len(got) != c.want {
 				t.Errorf("%d entries, want %d",
@@ -87,7 +87,7 @@ func TestSizeLimitRootBypasses(t *testing.T) {
 	withRoot(t, s)
 	s.SetLimits(Limits{Size: 1})
 
-	got, res := s.BackendSearch(sizeSearch(0), admin)
+	got, res, _ := s.BackendSearch(sizeSearch(0), admin)
 	if res.Code != ldap.Success {
 		t.Errorf("code = %v, want success", res.Code)
 	}

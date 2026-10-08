@@ -170,7 +170,7 @@ func TestRootDNBypassesPolicyAndNeedsNoEntry(t *testing.T) {
 		t.Error("the rootdn should have no entry")
 	}
 	// And it can still read under a deny-all policy.
-	got, sres := s.BackendSearch(baseSearch(), id)
+	got, sres, _ := s.BackendSearch(baseSearch(), id)
 	if sres.Code != ldap.Success || len(got) != 1 {
 		t.Errorf("root read: %v, %d entries",
 			sres.Code, len(got))

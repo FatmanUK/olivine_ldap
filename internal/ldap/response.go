@@ -10,6 +10,49 @@ type Result struct {
 	Referral   []string
 }
 
+// EncodeResultWithControls builds a result message carrying
+// response controls.
+//
+// Controls follow the protocol operation under the same context 0
+// constructed tag a request uses, so a client decodes them the
+// same way. A response with no controls omits the element
+// entirely rather than sending an empty sequence, which is what
+// slapd does and what EncodeResult below is for.
+func EncodeResultWithControls(
+	id int32, resTag ber.Tag, r Result,
+	controls []Control,
+) ([]byte, error) {
+	e := ber.NewEncoder()
+	e.Begin(TagMessage)
+	e.Int32(TagMsgID, id)
+	e.Begin(resTag)
+	writeResultFields(e, r)
+	e.End()
+	writeControls(e, controls)
+	e.End()
+	return e.Bytes()
+}
+
+// writeControls writes a control list, or nothing when empty.
+func writeControls(e *ber.Encoder, controls []Control) {
+	if len(controls) == 0 {
+		return
+	}
+	e.Begin(TagControls)
+	for _, c := range controls {
+		e.Begin(ber.TagSequence)
+		e.String(ber.TagOctetString, c.OID)
+		if c.Critical {
+			e.Bool(ber.TagBoolean, true)
+		}
+		if c.HasValue {
+			e.OctetString(ber.TagOctetString, c.Value)
+		}
+		e.End()
+	}
+	e.End()
+}
+
 // EncodeResult builds a complete LDAPMessage carrying one
 // LDAPResult under the response tag resTag.
 //
@@ -21,14 +64,7 @@ type Result struct {
 func EncodeResult(
 	id int32, resTag ber.Tag, r Result,
 ) ([]byte, error) {
-	e := ber.NewEncoder()
-	e.Begin(TagMessage)
-	e.Int32(TagMsgID, id)
-	e.Begin(resTag)
-	writeResultFields(e, r)
-	e.End()
-	e.End()
-	return e.Bytes()
+	return EncodeResultWithControls(id, resTag, r, nil)
 }
 
 // writeResultFields writes the four LDAPResult components.

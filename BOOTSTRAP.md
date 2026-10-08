@@ -69,8 +69,11 @@ that have aged worst in the C:
 - **Search limits work**, compared against slapd by `make golden-limits`:
   size, the request-versus-administrator minimum, the exactly-at-limit edge,
   and the `rootdn` bypass.
-- Not implemented: abandon's actual effect, SASL, paged results, controls, and
-  the ACL features listed in §3.3.
+- **Paged results work**, compared against slapd by `make golden-paged` across
+  four page sizes. It is the one control Olivine implements, and the only one
+  the root DSE advertises.
+- Not implemented: abandon's actual effect, SASL, `cn=config`, and the ACL
+  features listed in §3.3.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
@@ -184,7 +187,15 @@ upstream behaviours that are easy to get wrong:
 - **Which entries a truncated search returns is not specified.** slapd
   truncates in index order and Olivine by DN, so the golden scripts for limits
   compare the result code and the count and not the set — asserting the set
-  would assert something neither implementation promises.
+  would assert something neither implementation promises. **Paged results has
+  the same property**: which entries land on which page follows traversal
+  order, so `make golden-paged` compares page count, page sizes and the union,
+  which is everything RFC 2696 actually promises.
+- **The paged cookie is opaque by RFC 2696 2, and Olivine's differs from
+  slapd's on purpose.** slapd's is an index position; Olivine's names the last
+  DN returned, so an entry deleted behind the cursor cannot shift the sequence
+  and cause a skip or a repeat. A cookie Olivine did not issue is refused with
+  `unwillingToPerform` rather than guessed at.
 - **`back-mdb` renames a whole subtree.** Renaming `ou=people` with children
   beneath it answers success, not `notAllowedOnNonLeaf`. Delete refuses a
   non-leaf; ModDN does not, and assuming the two behave alike is wrong.
@@ -207,6 +218,10 @@ upstream behaviours that are easy to get wrong:
   `namingContexts`, though a plain search withholds it. Honouring only `+`
   leaves a client that asks by name with an empty entry — which is exactly what
   upstream's `ldapsearch` does, and how the container smoke test found it.
+- **A control that is advertised must work.** A client reads
+  `supportedControl` to decide what to send, so listing an unimplemented
+  control is worse than listing none. Olivine advertises paged results and
+  nothing else, and refuses StartTLS without advertising it.
 - **`rootdn` has no entry and bypasses access control.** That is what lets a
   directory be administered before it holds anything, and why `by * none` does
   not lock out the administrator.

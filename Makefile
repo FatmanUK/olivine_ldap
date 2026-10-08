@@ -53,6 +53,13 @@ golden-limits:
 		$(GO) test -tags golden -count=1 -v \
 			-run TestGoldenLimits ./internal/golden/
 
+## golden-paged: compare paged results against the C
+golden-paged:
+	@dsn=$$(./scripts/postgres-up.sh) && \
+		OLIVINE_TEST_DSN="$$dsn" \
+		$(GO) test -tags golden -count=1 -v \
+			-run TestGoldenPaged ./internal/golden/
+
 ## postgres-down: remove the throwaway Postgres
 postgres-down:
 	@./scripts/postgres-down.sh

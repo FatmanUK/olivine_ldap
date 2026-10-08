@@ -15,6 +15,7 @@ import (
 type fakeBackend struct {
 	entries  []ldap.SearchEntry
 	result   ldap.Result
+	controls []ldap.Control
 	suffixes []string
 
 	// identities records who each call was made as, so a test
@@ -54,10 +55,10 @@ func (f *fakeBackend) Bind(
 
 func (f *fakeBackend) Search(
 	r *ldap.SearchRequest, who ldap.Identity,
-) ([]ldap.SearchEntry, ldap.Result) {
+) ([]ldap.SearchEntry, ldap.Result, []ldap.Control) {
 	f.searchCalls = append(f.searchCalls, r)
 	f.identities = append(f.identities, who)
-	return f.entries, f.result
+	return f.entries, f.result, f.controls
 }
 
 func (f *fakeBackend) Add(

@@ -30,7 +30,7 @@ func (a *Adapter) Bind(
 // Search returns the matching entries.
 func (a *Adapter) Search(
 	req *ldap.SearchRequest, who ldap.Identity,
-) ([]ldap.SearchEntry, ldap.Result) {
+) ([]ldap.SearchEntry, ldap.Result, []ldap.Control) {
 	return a.store.BackendSearch(req, who)
 }
 
