@@ -22,8 +22,15 @@ func seed(t *testing.T, s *Store) {
 			t.Fatalf("add %s: %v", dn, err)
 		}
 	}
+	// top + organization is the structural pair and dcObject
+	// the auxiliary that permits dc. `domain` would be the
+	// obvious choice and lives in cosine.schema, not
+	// core.schema, so the schema check refuses it — as slapd
+	// does, with "objectClass: value #1 invalid per syntax".
 	add("dc=example,dc=com",
-		Attribute{"objectClass", []string{"top", "domain"}},
+		Attribute{"objectClass", []string{
+			"top", "organization", "dcObject"}},
+		Attribute{"o", []string{"example"}},
 		Attribute{"dc", []string{"example"}})
 	ou := Attribute{"objectClass",
 		[]string{"organizationalUnit"}}
@@ -54,23 +61,60 @@ func TestAddAndGet(t *testing.T) {
 	if e.DN != "dc=example,dc=com" {
 		t.Errorf("DN = %q", e.DN)
 	}
-	if len(e.Values) != 3 {
-		t.Errorf("values = %d, want 3", len(e.Values))
+	if len(e.Values) != 5 {
+		t.Errorf("values = %d, want 5", len(e.Values))
+	}
+}
+
+// validBase is a schema-valid attribute set for a dc entry.
+func validBase(dc string) []Attribute {
+	return []Attribute{
+		{"objectClass", []string{
+			"top", "organization", "dcObject"}},
+		{"o", []string{dc}},
+		{"dc", []string{dc}},
 	}
 }
 
 func TestAddRejectsDuplicate(t *testing.T) {
 	s := testStore(t)
 	seed(t, s)
-	_, err := s.Add("dc=example,dc=com", nil)
+	_, err := s.Add("dc=example,dc=com",
+		validBase("example"))
 	if !errors.Is(err, ErrExists) {
 		t.Fatalf("err = %v, want ErrExists", err)
 	}
 	// And a differently-spelled duplicate is still a
 	// duplicate, because the key is the normalised form.
-	_, err = s.Add("DC=EXAMPLE,DC=COM", nil)
+	_, err = s.Add("DC=EXAMPLE,DC=COM", validBase("example"))
 	if !errors.Is(err, ErrExists) {
 		t.Fatalf("respelled: err = %v, want ErrExists", err)
+	}
+}
+
+// slapd checks the schema before it checks whether the entry
+// exists or whether its parent does. Verified against the
+// oracle: a duplicate DN carrying an undefined objectClass comes
+// back as invalidSyntax (21), not entryAlreadyExists (68), and a
+// missing parent with the same bad class is 21 rather than
+// noSuchObject (32).
+func TestSchemaCheckedBeforeExistence(t *testing.T) {
+	s := testStore(t)
+	seed(t, s)
+	bad := []Attribute{
+		{"objectClass", []string{"nosuchclass"}},
+	}
+	_, err := s.Add("dc=example,dc=com", bad)
+	if errors.Is(err, ErrExists) {
+		t.Error("existence was checked before the schema")
+	}
+	res := resultFor(err)
+	if res.Code != ldap.InvalidSyntax {
+		t.Errorf("code = %v, want invalidSyntax", res.Code)
+	}
+	_, err = s.Add("cn=x,ou=absent,dc=example,dc=com", bad)
+	if errors.Is(err, ErrNoParent) {
+		t.Error("parent was checked before the schema")
 	}
 }
 
@@ -78,7 +122,11 @@ func TestAddRequiresParent(t *testing.T) {
 	s := testStore(t)
 	seed(t, s)
 	_, err := s.Add("cn=orphan,ou=absent,dc=example,dc=com",
-		nil)
+		[]Attribute{
+			{"objectClass", []string{"person"}},
+			{"cn", []string{"orphan"}},
+			{"sn", []string{"Orphan"}},
+		})
 	if !errors.Is(err, ErrNoParent) {
 		t.Fatalf("err = %v, want ErrNoParent", err)
 	}
@@ -146,6 +194,9 @@ func TestSubtreeDoesNotMatchPrefixSibling(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := s.Add("dc=examplecorp,dc=com", []Attribute{
+		{"objectClass", []string{
+			"top", "organization", "dcObject"}},
+		{"o", []string{"examplecorp"}},
 		{"dc", []string{"examplecorp"}},
 	})
 	if err != nil {

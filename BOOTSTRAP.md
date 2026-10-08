@@ -41,8 +41,12 @@ that have aged worst in the C:
   and compare — identical requests against identically seeded trees.
 - Passwords are Argon2id with upstream's exact parameters; `{SSHA}`, `{SHA}`
   and unprefixed values are read but never written.
+- **Schema checking matches slapd's codes exactly**, including the surprising
+  one: an undefined objectClass is `invalidSyntax` (21), not
+  `objectClassViolation` (65). Every code and diagnostic was captured from the
+  oracle, not guessed.
 - Not implemented: modrdn, the root DSE, abandon's actual effect, SASL,
-  paged results, and **schema checking** — see §3.1.
+  paged results, and the matching-rule semantics from step 6's second half.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
@@ -155,12 +159,29 @@ upstream behaviours that are easy to get wrong:
   `objectclass`. The store keeps the lower-cased form — right for matching
   and indexing — and converts on the way out. The golden harness caught this:
   every search script differed by exactly one capital letter.
-- **Olivine does no schema checking yet, and slapd does.** The harness fixture
-  first used `objectClass: domain`, which lives in `cosine.schema` rather than
-  `core.schema`; slapd refused the entry with
-  "objectClass: value #1 invalid per syntax" and Olivine accepted it. Nothing
-  yet enforces that an objectClass is defined, that MUST attributes are
-  present, or that exactly one structural class applies.
+- **An undefined objectClass is `invalidSyntax` (21), not
+  `objectClassViolation` (65).** slapd validates the value against the
+  objectClass syntax before it ever considers the class hierarchy. The whole
+  table was captured from the oracle by adding deliberately bad entries:
+
+  | failure | code | diagnostic |
+  |---|---|---|
+  | undefined objectClass | 21 | `objectClass: value #0 invalid per syntax` |
+  | missing MUST | 65 | `object class 'person' requires attribute 'sn'` |
+  | no structural class | 65 | `no structural object class provided` |
+  | attribute not allowed | 65 | `attribute 'dc' not allowed` |
+  | two structural classes | 65 | `invalid structural object class chain (a/b)` |
+  | undefined attribute | 17 | `nosuchattr: attribute type undefined` |
+
+- **slapd checks the schema *before* existence and before the parent.** A
+  duplicate DN carrying an undefined objectClass comes back 21, not 68; a
+  missing parent with the same bad class is 21, not 32.
+- **An RDN value absent from the entry is accepted.** `dn: cn=g,...` with
+  `cn: different` and no `cn: g` is added without complaint, which RFC 4511
+  only makes a SHOULD.
+- **`objectClass: domain` lives in `cosine.schema`, not `core.schema`**, which
+  is how the harness fixture came to be refused by slapd and accepted by
+  Olivine before any of this existed.
 - **RFC 4513 5.1.2's unauthenticated bind is rejected.** A bind with a name
   and an empty password would otherwise authenticate anyone who knows a DN.
   An empty name *and* empty password is an anonymous bind and succeeds

@@ -103,6 +103,11 @@ func modOp(op ldap.ModifyOp) (ModOp, bool) {
 
 // resultFor maps a store error to a result code.
 func resultFor(err error) ldap.Result {
+	// A schema violation carries the code slapd uses, so it is
+	// consulted before the sentinel errors.
+	if res, ok := violationResult(err); ok {
+		return res
+	}
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return ldap.Result{Code: ldap.NoSuchObject}

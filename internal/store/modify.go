@@ -82,6 +82,14 @@ func (s *Store) Modify(rawDN string, mods []Mod) error {
 				return err
 			}
 		}
+		// slapd checks the schema after the whole list has
+		// applied, not after each modification: an
+		// intermediate state may legitimately violate it,
+		// as when one mod adds an objectClass and the next
+		// adds the attribute it requires.
+		if err := s.recheck(tx, &e); err != nil {
+			return err
+		}
 		return tx.Model(&e).
 			Update("updated_at", gorm.Expr("now()")).
 			Error

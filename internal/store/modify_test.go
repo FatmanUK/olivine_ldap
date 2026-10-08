@@ -92,12 +92,16 @@ func TestModifyReplace(t *testing.T) {
 }
 
 // RFC 4511 4.6: a replace with no values deletes the attribute.
+//
+// description, not sn: person MUST have sn, so removing it is an
+// objectClassViolation and would test the schema check instead.
 func TestModifyReplaceNoValuesDeletes(t *testing.T) {
 	s := testStore(t)
 	seed(t, s)
+	addDescription(t, s)
 	err := s.Modify(alice, []Mod{{
 		Op:        ModReplace,
-		Attribute: Attribute{Type: "sn"},
+		Attribute: Attribute{Type: "description"},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -106,8 +110,41 @@ func TestModifyReplaceNoValuesDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := valuesOf(e, "sn"); len(got) != 0 {
-		t.Fatalf("sn = %v, want gone", got)
+	if got := valuesOf(e, "description"); len(got) != 0 {
+		t.Fatalf("description = %v, want gone", got)
+	}
+}
+
+// addDescription gives Alice an optional attribute to remove.
+func addDescription(t *testing.T, s *Store) {
+	t.Helper()
+	err := s.Modify(alice, []Mod{{
+		Op: ModAdd,
+		Attribute: Attribute{"description",
+			[]string{"removable"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Removing a MUST attribute is an objectClassViolation, which is
+// what slapd answers: "object class 'person' requires attribute
+// 'sn'".
+func TestModifyCannotRemoveRequiredAttribute(t *testing.T) {
+	s := testStore(t)
+	seed(t, s)
+	err := s.Modify(alice, []Mod{{
+		Op:        ModDelete,
+		Attribute: Attribute{Type: "sn"},
+	}})
+	if err == nil {
+		t.Fatal("removing sn from a person should fail")
+	}
+	res := resultFor(err)
+	if res.Code != ldap.ObjectClassViolation {
+		t.Errorf("code = %v, want objectClassViolation",
+			res.Code)
 	}
 }
 
@@ -116,9 +153,10 @@ func TestModifyReplaceNoValuesDeletes(t *testing.T) {
 func TestModifyDeleteNoValuesRemovesAttribute(t *testing.T) {
 	s := testStore(t)
 	seed(t, s)
+	addDescription(t, s)
 	err := s.Modify(alice, []Mod{{
 		Op:        ModDelete,
-		Attribute: Attribute{Type: "sn"},
+		Attribute: Attribute{Type: "description"},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -127,8 +165,8 @@ func TestModifyDeleteNoValuesRemovesAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := valuesOf(e, "sn"); len(got) != 0 {
-		t.Fatalf("sn = %v, want gone", got)
+	if got := valuesOf(e, "description"); len(got) != 0 {
+		t.Fatalf("description = %v, want gone", got)
 	}
 }
 

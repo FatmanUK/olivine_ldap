@@ -83,6 +83,25 @@ func DataScripts() []Script {
 		caseInsensitiveFilterScript(),
 		missingBaseScript(),
 		compareScript(),
+		badSchemaAddScript(),
+	}
+}
+
+// badSchemaAddScript adds an entry whose objectClass is not
+// defined. Both implementations must refuse it, and with the
+// same code: slapd answers invalidSyntax, not
+// objectClassViolation, because it validates the value against
+// the objectClass syntax before considering the hierarchy.
+func badSchemaAddScript() Script {
+	return Script{
+		Name: "add-undefined-objectclass",
+		Requests: []Request{{
+			Name: "add",
+			Op:   ldap.ReqAdd,
+			Body: addBody("cn=bad,"+baseDN,
+				[]attr{{"objectClass",
+					[]string{"nosuchclass"}}}),
+		}},
 	}
 }
 

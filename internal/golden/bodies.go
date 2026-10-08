@@ -65,3 +65,32 @@ func compareBody(dn, attr, value string) []byte {
 	}
 	return out
 }
+
+// attr is one attribute for addBody.
+type attr struct {
+	Type   string
+	Values []string
+}
+
+// addBody encodes an AddRequest body.
+func addBody(dn string, attrs []attr) []byte {
+	e := ber.NewEncoder()
+	e.String(ldap.TagLDAPDN, dn)
+	e.Begin(ber.TagSequence)
+	for _, a := range attrs {
+		e.Begin(ber.TagSequence)
+		e.String(ber.TagOctetString, a.Type)
+		e.Begin(ber.TagSet)
+		for _, v := range a.Values {
+			e.String(ber.TagOctetString, v)
+		}
+		e.End()
+		e.End()
+	}
+	e.End()
+	out, err := e.Bytes()
+	if err != nil {
+		panic(err)
+	}
+	return out
+}

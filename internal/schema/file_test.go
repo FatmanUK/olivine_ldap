@@ -78,6 +78,12 @@ func loadOne(t *testing.T, path string) (int, int) {
 	return r.CountAttributeTypes(), r.CountObjectClasses()
 }
 
+// coreSchemaFile locates core.schema in the submodule.
+func coreSchemaFile(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(schemaDir(t), "core.schema")
+}
+
 // TestCoreSchemaSpecifics checks definitions whose exact
 // content is known, so a parser that produces structurally
 // valid nonsense is caught.

@@ -13,6 +13,8 @@ func withPassword(t *testing.T, s *Store, dn, pw string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// person permits userPassword; simpleSecurityObject would
+	// be the alternative and is not needed here.
 	_, err = s.Add(dn, []Attribute{
 		{"objectClass", []string{"person"}},
 		{"cn", []string{"admin"}},

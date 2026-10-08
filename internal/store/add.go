@@ -32,6 +32,9 @@ func (s *Store) Add(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkEntry(values); err != nil {
+		return nil, err
+	}
 	entry := &Entry{
 		DN:       norm,
 		PrettyDN: pretty,
