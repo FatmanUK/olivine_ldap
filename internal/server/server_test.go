@@ -137,11 +137,14 @@ func TestStartTLSIsRefusedNotIgnored(t *testing.T) {
 			m.Op, ldap.ResExtended)
 	}
 	// Recognised and refused, not met with silence or a
-	// parse error.
+	// parse error — and with operationsError, which is the
+	// branch starttls.c:46-48 takes when the connection is
+	// already TLS. The golden harness caught this: the first
+	// version of this test asserted unwillingToPerform,
+	// which was a guess.
 	if code := resultCode(t, m); code !=
-		ldap.UnwillingToPerform {
-		t.Errorf("code = %v, want unwillingToPerform",
-			code)
+		ldap.OperationsError {
+		t.Errorf("code = %v, want operationsError", code)
 	}
 }
 

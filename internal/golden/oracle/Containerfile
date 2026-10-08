@@ -1,0 +1,64 @@
+# The golden oracle: OpenLDAP's own slapd, built from the
+# pinned submodule and reachable over TCP.
+#
+# Rootless by construction — no USER root beyond the build, no
+# capabilities, and slapd listens on an unprivileged port.
+#
+# The source is COPYed in rather than cloned, so the oracle is
+# always the submodule's exact commit and never a moving
+# upstream.
+FROM docker.io/library/debian:bookworm-slim AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	build-essential \
+	libssl-dev \
+	libltdl-dev \
+	groff-base \
+	&& rm -rf /var/lib/apt/lists/*
+
+COPY src /usr/src/openldap
+WORKDIR /usr/src/openldap
+
+# --disable-bdb/--disable-hdb: Berkeley DB is gone from
+# bookworm and Olivine uses Postgres anyway. back-mdb is
+# bundled, so the oracle has a working database without it.
+#
+# --without-cyrus-sasl: SASL is an open question (plan step 8);
+# the oracle only needs simple bind over TLS for now.
+RUN ./configure \
+	--prefix=/opt/openldap \
+	--enable-slapd \
+	--enable-mdb \
+	--disable-bdb \
+	--disable-hdb \
+	--with-tls=openssl \
+	--without-cyrus-sasl \
+	--disable-spasswd \
+	&& make depend \
+	&& make \
+	&& make install
+
+FROM docker.io/library/debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	libssl3 libltdl7 \
+	&& rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /opt/openldap /opt/openldap
+
+# An unprivileged user, and a port above 1024 to match.
+RUN useradd --system --create-home --uid 10001 olivine
+
+# back-mdb needs somewhere to write. It lives inside the
+# container so no host directory has to be made writable by
+# the container's uid, which rootless Podman maps to a subuid.
+RUN mkdir -p /data && chown olivine:olivine /data
+
+USER olivine
+ENV PATH=/opt/openldap/bin:/opt/openldap/sbin:$PATH
+
+EXPOSE 10636
+
+# Arguments come from the harness, so the debug level and the
+# listener URL are not baked in.
+ENTRYPOINT ["/opt/openldap/libexec/slapd"]

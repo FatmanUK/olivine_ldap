@@ -40,8 +40,14 @@ that have aged worst in the C:
   reply rather than silence. StartTLS is refused, critical unknown controls
   draw `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
-- `internal/{schema,dn,store,golden}` are still `doc.go` only.
-- `make lint`, `make test`, `make race` and `make build` all pass.
+- **`internal/golden` is the oracle, and it runs.** `make golden-build`
+  compiles OpenLDAP 2.7.1 from the submodule into a rootless Podman image
+  (~5 minutes, ~97 MB); `make golden` drives identical bytes through real
+  slapd and through Olivine in-process and diffs the transcripts. It is
+  green, and it has already corrected two mistakes — see §3.1.
+- `internal/{schema,dn,store}` are still `doc.go` only.
+- `make lint`, `make test`, `make race`, `make build` and `make golden` all
+  pass.
 - `make golden` and `make golden-build` exist and fail deliberately,
   pointing at plan step 5.
 - Host toolchain: Go 1.26.5, Podman 5.8.3.
@@ -60,14 +66,15 @@ authoritative for sequencing. In brief:
 3. ~~The BER codec, `internal/ber`.~~ Done, `b078080`.
 4. ~~The protocol layer and the TLS listener.~~ Done, `59bd65f` and this
    commit.
-5. **The golden harness, `internal/golden`** — deliberately before schema
-   and the operations, so everything after it is verified rather than
-   reasoned about. Podman builds slapd from the submodule and drives a script
-   over TCP; Olivine runs in-process; the transcripts diff. The corpus is the
-   113 entries in `openldap/tests/scripts`.
+5. ~~The golden harness, `internal/golden`.~~ Done — this commit.
 6. **Schema subsystem** — attribute types, object classes, syntaxes,
-   matching rules.
-7. **DN handling and the Postgres store.**
+   matching rules. `schema_init.c` is 6,979 lines and the normalisation
+   rules in it are where behaviour compatibility is won or lost.
+7. **DN handling and the Postgres store.** `dn.c` normalisation first, since
+   the store's keys depend on it.
+8. **Operations** — bind, search, add/modify/delete/modrdn, compare,
+   abandon, root DSE. This is what unblocks most of the 113 upstream test
+   scripts as harness corpus.
 
 The plan carries the ordering beyond that, and three open questions —
 whether `syncrepl.c` is ported at all, whether `cn=config` becomes a
@@ -111,6 +118,16 @@ upstream behaviours that are easy to get wrong:
   `ldap.h:522-548` states every operation that way — `LDAP_REQ_BIND` is
   `0x60`. A decoded form would need re-packing at every comparison.
 - **`ber_put_boolean` writes `0xff` for true**, not `0x01`.
+- **StartTLS on an already-TLS connection is `operationsError`**, diagnostic
+  "TLS already started" — not `unwillingToPerform`. `starttls.c:46-48`
+  branches on `op->o_conn->c_is_tls != 0`, which for Olivine is always true.
+  **The golden harness found this**; it had been a guess, and both the code
+  and its unit test asserted the wrong code until the C was asked directly.
+- **slapd parses the Sync control before deciding whether it supports it**,
+  so a valueless Sync control draws `protocolError` "Sync control value is
+  absent" rather than `unavailableCriticalExtension`. A test for unsupported
+  critical controls therefore needs an OID nobody claims, not a Sync OID.
+  Also found by the harness, as a bad test rather than bad code.
 - **A trailing element after the operation that parses but is not the
   controls tag is silently ignored**, and the operation proceeds. Only one
   that fails to parse is an error. `get_ctrls2` (`controls.c:817-823`) sets
@@ -238,7 +255,23 @@ the standard library.
 **External non-Go dependency**:
 
 Podman (rootless), for the deployment containers and for the golden oracle
-built from `openldap/`.
+built from `openldap/`. Verified with Podman 5.8.3.
+
+Two rootless-Podman traps the oracle hit, both of which present as "slapd
+exited and said nothing":
+
+- **`ldaps:///` defaults to port 636**, which an unprivileged container
+  cannot bind — `daemon: bind(6) failed errno=13`. The listener URL must
+  name a port above 1024.
+- **`os.MkdirTemp` creates directories 0700**, and the container's user is a
+  subuid of the host user, so it cannot traverse one even through a
+  read-only bind mount. The generated config directory is chmodded 0755.
+
+Readiness is a completed TLS handshake, not a successful dial: Podman's port
+forwarder accepts connections before anything inside the container listens,
+so dialling succeeds against a slapd that has already died. The oracle
+container also deliberately omits `--rm`, because a container that exits
+during startup takes its logs with it.
 
 `openldap/` is a leaf that only the generator scripts and `make golden-build`
 read. No Go package imports it.

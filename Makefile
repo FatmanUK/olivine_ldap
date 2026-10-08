@@ -45,22 +45,11 @@ style:
 
 ## golden-build: build the C oracle container from openldap/
 golden-build:
-	@if [ ! -f openldap/configure ]; then \
-		echo "openldap/ is empty; run:"; \
-		echo "  git submodule update --init openldap"; \
-		exit 1; \
-	fi
-	@echo "golden-build: not implemented (plan step 5)."
-	@echo "It will build slapd from openldap/ at $$(git -C \
-		openldap describe --tags --always) in a rootless"
-	@echo "$(PODMAN) container and expose it over TCP."
-	@exit 1
+	@./scripts/golden-build.sh
 
 ## golden: diff Olivine against the C oracle
 golden:
-	@echo "golden: not implemented (plan step 5)."
-	@echo "Corpus is the 113 entries in openldap/tests/scripts."
-	@exit 1
+	$(GO) test -tags golden -count=1 ./internal/golden/
 
 clean:
 	$(GO) clean ./...

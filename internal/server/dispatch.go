@@ -58,12 +58,24 @@ func (c *conn) answer(m *ldap.Message) bool {
 // StartTLS is refused rather than ignored: Olivine is TLS-only
 // so starttls.c is not ported, but the operation must still be
 // recognised. Refusing it keeps a client's failure legible.
+//
+// The code is operationsError, not unwillingToPerform. Every
+// Olivine connection is already TLS, which is the branch at
+// starttls.c:46-48:
+//
+//	/* can't start TLS if it is already started */
+//	if (op->o_conn->c_is_tls != 0) {
+//		rs->sr_text = "TLS already started";
+//		rc = LDAP_OPERATIONS_ERROR;
+//
+// The golden harness caught this: unwillingToPerform was a
+// guess, and the diagnostic is upstream's wording verbatim.
 func (c *conn) extended(m *ldap.Message) bool {
 	oid := extendedOID(m.Body)
 	if oid == ldap.OIDStartTLS {
 		return c.fail(m, ldap.Result{
-			Code:       ldap.UnwillingToPerform,
-			Diagnostic: "TLS already in place",
+			Code:       ldap.OperationsError,
+			Diagnostic: "TLS already started",
 		})
 	}
 	return c.fail(m, ldap.Result{
