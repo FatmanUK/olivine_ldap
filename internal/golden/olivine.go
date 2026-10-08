@@ -9,6 +9,11 @@ import (
 	"github.com/FatmanUK/openldap_olivine/internal/server"
 )
 
+// Backend is what StartOlivine attaches, if anything. A nil
+// Backend leaves every operation unwillingToPerform, which is
+// what the protocol-only scripts want.
+type Backend = server.Backend
+
 // Olivine is this project's server, running in-process.
 //
 // In-process rather than in a container: the whole point of
@@ -16,18 +21,24 @@ import (
 // a panic surfaces as a test failure with a stack rather than
 // as a dead container.
 type Olivine struct {
-	Addr string
-	srv  *server.Server
-	dir  string
+	Addr    string
+	srv     *server.Server
+	dir     string
+	backend Backend
 }
 
-// StartOlivine listens on an ephemeral port.
+// StartOlivine listens on an ephemeral port with no backend.
 func StartOlivine() (*Olivine, error) {
+	return StartOlivineWith(nil)
+}
+
+// StartOlivineWith listens with the given backend attached.
+func StartOlivineWith(b Backend) (*Olivine, error) {
 	dir, err := os.MkdirTemp("", "olivine-under-test-")
 	if err != nil {
 		return nil, err
 	}
-	o := &Olivine{dir: dir}
+	o := &Olivine{dir: dir, backend: b}
 	if err := writeKeyPair(dir); err != nil {
 		o.Stop()
 		return nil, err
@@ -49,7 +60,8 @@ func StartOlivine() (*Olivine, error) {
 // listen starts the server on an ephemeral port.
 func (o *Olivine) listen(pair tls.Certificate) error {
 	s, err := server.New(server.Config{
-		Addr: "127.0.0.1:0",
+		Addr:    "127.0.0.1:0",
+		Backend: o.backend,
 		TLS: &tls.Config{
 			Certificates: []tls.Certificate{pair},
 			MinVersion:   tls.VersionTLS12,

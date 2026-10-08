@@ -20,12 +20,23 @@ func TestNewRequiresTLS(t *testing.T) {
 	}
 }
 
-// start brings up a Server on an ephemeral port and returns a
-// dialler for it.
+// start brings up a Server with no backend, which is what the
+// protocol-level tests want.
 func start(t *testing.T) (*Server, *tls.Config, string) {
 	t.Helper()
+	return startWith(t, nil)
+}
+
+// startWith brings up a Server on an ephemeral port with the
+// given backend.
+func startWith(
+	t *testing.T, b Backend,
+) (*Server, *tls.Config, string) {
+	t.Helper()
 	srvTLS, cliTLS := testTLS(t)
-	s, err := New(Config{Addr: "127.0.0.1:0", TLS: srvTLS})
+	s, err := New(Config{
+		Addr: "127.0.0.1:0", TLS: srvTLS, Backend: b,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +104,9 @@ func TestUnbindClosesWithoutReply(t *testing.T) {
 	}
 }
 
-func TestUnimplementedOpIsRefused(t *testing.T) {
+// With no backend configured every operation is refused, which
+// is what the server did before any database existed.
+func TestNoBackendRefusesOperations(t *testing.T) {
 	_, cliTLS, addr := start(t)
 	c := dial(t, cliTLS, addr)
 

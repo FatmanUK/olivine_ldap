@@ -51,6 +51,10 @@ Configuration comes from the environment:
   OLIVINE_LISTEN     listen address (default :636)
   OLIVINE_TLS_CERT   certificate file (required)
   OLIVINE_TLS_KEY    private key file (required)
+  OLIVINE_DSN        Postgres connection string; without it
+                     every operation is unwillingToPerform
+  OLIVINE_SUFFIX     naming contexts, colon-separated
+  OLIVINE_SCHEMA     extra .schema files, colon-separated
 
 TLS is mandatory. There is no cleartext listener and no
 STARTTLS, so a missing certificate is a configuration error

@@ -5,19 +5,20 @@ import (
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
 )
 
-// Scripts are the comparisons that can run today.
+// Scripts are the comparisons that need no data on either side.
 //
-// They deliberately cover only what both implementations can
-// already answer: protocol-level behaviour on an empty
-// database. The 113 entries under openldap/tests/scripts are
-// the eventual corpus, but most of them need the operations
-// (plan step 8), and a script that fails on both sides equally
-// tells us nothing we did not already know.
+// Protocol-level behaviour only, so they run without Postgres.
+// Anything that depends on entries belongs in DataScripts: with
+// no backend Olivine answers every operation
+// unwillingToPerform, which would differ from the oracle for
+// reasons that say nothing about either implementation.
+//
+// The 113 entries under openldap/tests/scripts are the eventual
+// corpus.
 func Scripts() []Script {
 	return []Script{
 		startTLSScript(),
 		criticalControlScript(),
-		anonymousSearchScript(),
 	}
 }
 
@@ -70,36 +71,98 @@ func criticalControlScript() Script {
 	}
 }
 
-// anonymousSearchScript searches without binding first.
-func anonymousSearchScript() Script {
+// DataScripts are the comparisons that need a seeded tree on
+// both sides. They are separate from Scripts because they need
+// Postgres, and the protocol-level ones do not.
+func DataScripts() []Script {
+	return []Script{
+		searchScopeScript("search-base", ldap.ScopeBase),
+		searchScopeScript("search-one", ldap.ScopeOneLevel),
+		searchScopeScript("search-sub", ldap.ScopeSubtree),
+		equalityFilterScript(),
+		caseInsensitiveFilterScript(),
+		missingBaseScript(),
+		compareScript(),
+	}
+}
+
+// searchScopeScript searches the seeded tree at one scope.
+func searchScopeScript(
+	name string, scope ldap.Scope,
+) Script {
 	return Script{
-		Name: "anonymous-search",
-		Pending: "search is plan step 8; Olivine answers " +
-			"unwillingToPerform until then",
+		Name: name,
 		Requests: []Request{{
-			Name: "search",
+			Name: name,
 			Op:   ldap.ReqSearch,
-			Body: baseSearchBody(),
+			Body: searchBody(baseDN, scope,
+				presentFilter("objectClass"), nil),
 		}},
 	}
 }
 
-// baseSearchBody is a base-scope search for objectClass.
-func baseSearchBody() []byte {
-	e := ber.NewEncoder()
-	e.String(ldap.TagLDAPDN, "dc=example,dc=com")
-	e.Enum(ber.TagEnumerated, int32(ldap.ScopeBase))
-	e.Enum(ber.TagEnumerated, 0)
-	e.Int32(ber.TagInteger, 0)
-	e.Int32(ber.TagInteger, 0)
-	e.Bool(ber.TagBoolean, false)
-	// present filter (objectClass=*), context 7, primitive.
-	e.String(0x87, "objectClass")
-	e.Begin(ber.TagSequence)
-	e.End()
-	out, err := e.Bytes()
-	if err != nil {
-		panic(err)
+// equalityFilterScript checks an equality filter.
+func equalityFilterScript() Script {
+	return Script{
+		Name: "filter-equality",
+		Requests: []Request{{
+			Name: "cn=Alice",
+			Op:   ldap.ReqSearch,
+			Body: searchBody(baseDN, ldap.ScopeSubtree,
+				equalityFilter("cn", "Alice"), nil),
+		}},
 	}
-	return out
+}
+
+// caseInsensitiveFilterScript checks that cn's inherited
+// caseIgnoreMatch is honoured by both implementations.
+func caseInsensitiveFilterScript() Script {
+	return Script{
+		Name: "filter-case-insensitive",
+		Requests: []Request{{
+			Name: "cn=aLiCe",
+			Op:   ldap.ReqSearch,
+			Body: searchBody(baseDN, ldap.ScopeSubtree,
+				equalityFilter("cn", "aLiCe"), nil),
+		}},
+	}
+}
+
+// missingBaseScript searches a base that does not exist.
+func missingBaseScript() Script {
+	return Script{
+		Name: "search-missing-base",
+		Requests: []Request{{
+			Name: "absent base",
+			Op:   ldap.ReqSearch,
+			Body: searchBody("dc=absent,dc=com",
+				ldap.ScopeSubtree,
+				presentFilter("objectClass"), nil),
+		}},
+	}
+}
+
+// compareScript checks compareTrue and compareFalse.
+func compareScript() Script {
+	return Script{
+		Name: "compare",
+		Requests: []Request{
+			{Name: "true", Op: ldap.ReqCompare,
+				Body: compareBody(
+					"cn=Alice,ou=people,"+baseDN,
+					"sn", "Anderson")},
+			{Name: "false", Op: ldap.ReqCompare,
+				Body: compareBody(
+					"cn=Alice,ou=people,"+baseDN,
+					"sn", "Nothere")},
+		},
+	}
+}
+
+// baseSearchBody is a base-scope search for objectClass, used
+// by the scripts that only need a well-formed search to carry a
+// control.
+func baseSearchBody() []byte {
+	return searchBody(baseDN, ldap.ScopeBase,
+		presentFilter("objectClass"), nil)
 }

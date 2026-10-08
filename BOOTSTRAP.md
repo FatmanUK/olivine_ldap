@@ -35,10 +35,16 @@ that have aged worst in the C:
   controls, response encoder. 82.9% coverage, fuzzed for ~10M executions.
 - **`internal/server`** — TLS-only listener, goroutine per connection,
   dispatch. 80.5% coverage, race-clean.
-- No operation is implemented yet: each is answered
-  `unwillingToPerform`/"operation not implemented", which is the honest
-  reply rather than silence. StartTLS is refused, critical unknown controls
-  draw `unavailableCriticalExtension`, and malformed input draws a notice of
+- **Bind, search, add, modify, delete and compare work**, and `make
+  golden-data` shows Olivine matching real slapd byte-for-byte on all four
+  search scopes, equality filters, case-insensitive matching, a missing base,
+  and compare — identical requests against identically seeded trees.
+- Passwords are Argon2id with upstream's exact parameters; `{SSHA}`, `{SHA}`
+  and unprefixed values are read but never written.
+- Not implemented: modrdn, the root DSE, abandon's actual effect, SASL,
+  paged results, and **schema checking** — see §3.1.
+- StartTLS is refused with `operationsError`, critical unknown controls draw
+  `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
 - **`internal/golden` is the oracle, and it runs.** `make golden-build`
   compiles OpenLDAP 2.7.1 from the submodule into a rootless Podman image
@@ -92,11 +98,12 @@ authoritative for sequencing. In brief:
    behaviour compatibility is actually won or lost. The definitions are
    parsed; the semantics are not implemented.
 7. ~~DN handling and the Postgres store.~~ Done — this commit.
-8. **Operations.** Wire the store to the dispatcher: bind, search with
-   filters (`filter.c`, `filterentry.c`), add/modify/delete/modrdn, compare,
-   root DSE. This is what unblocks most of the 113 upstream test scripts as
-   harness corpus, and what lets the `anonymous-search` golden script stop
-   being Pending.
+8. **Operations** — mostly done, this commit. Bind, search, add, modify,
+   delete and compare are wired and golden-verified. Outstanding: **schema
+   checking** (slapd refuses an entry whose objectClass is undefined; Olivine
+   accepts it), modrdn, the root DSE, abandon's effect, paged results, and
+   the matching-rule semantics from step 6's second half that proper
+   ordering and substring matching need.
 8. **Operations** — bind, search, add/modify/delete/modrdn, compare,
    abandon, root DSE. This is what unblocks most of the 113 upstream test
    scripts as harness corpus.
@@ -143,6 +150,24 @@ upstream behaviours that are easy to get wrong:
   `ldap.h:522-548` states every operation that way — `LDAP_REQ_BIND` is
   `0x60`. A decoded form would need re-packing at every comparison.
 - **`ber_put_boolean` writes `0xff` for true**, not `0x01`.
+- **slapd returns attribute descriptions in the capitalisation the schema
+  declares**, so an entry comes back carrying `objectClass`, not
+  `objectclass`. The store keeps the lower-cased form — right for matching
+  and indexing — and converts on the way out. The golden harness caught this:
+  every search script differed by exactly one capital letter.
+- **Olivine does no schema checking yet, and slapd does.** The harness fixture
+  first used `objectClass: domain`, which lives in `cosine.schema` rather than
+  `core.schema`; slapd refused the entry with
+  "objectClass: value #1 invalid per syntax" and Olivine accepted it. Nothing
+  yet enforces that an objectClass is defined, that MUST attributes are
+  present, or that exactly one structural class applies.
+- **RFC 4513 5.1.2's unauthenticated bind is rejected.** A bind with a name
+  and an empty password would otherwise authenticate anyone who knows a DN.
+  An empty name *and* empty password is an anonymous bind and succeeds
+  (5.1.1).
+- **A bind against a missing entry gives `invalidCredentials`**, not
+  `noSuchObject`: telling an unauthenticated caller which DNs exist is a
+  disclosure.
 - **StartTLS on an already-TLS connection is `operationsError`**, diagnostic
   "TLS already started" — not `unwillingToPerform`. `starttls.c:46-48`
   branches on `op->o_conn->c_is_tls != 0`, which for Olivine is always true.

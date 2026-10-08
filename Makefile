@@ -9,7 +9,7 @@ VERSION := $(shell git describe --tags --always --dirty \
 LDFLAGS := -X main.version=$(VERSION)
 
 .PHONY: all build test race store postgres-down lint fmt vet \
-	style golden golden-build clean help
+	style golden golden-data golden-build clean help
 
 all: lint test build
 
@@ -58,9 +58,17 @@ style:
 golden-build:
 	@./scripts/golden-build.sh
 
-## golden: diff Olivine against the C oracle
+## golden: diff Olivine against the C oracle (protocol only)
 golden:
 	$(GO) test -tags golden -count=1 ./internal/golden/
+
+## golden-data: the same, with a seeded tree on both sides
+##             (needs Postgres as well as the oracle image)
+golden-data:
+	@dsn=$$(./scripts/postgres-up.sh) && \
+		OLIVINE_TEST_DSN="$$dsn" \
+		$(GO) test -tags golden -count=1 -v \
+			-run TestGoldenData ./internal/golden/
 
 clean:
 	$(GO) clean ./...

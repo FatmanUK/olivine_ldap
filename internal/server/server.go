@@ -21,11 +21,16 @@ type Config struct {
 	Addr string
 	// TLS must be set. See ErrNoTLS.
 	TLS *tls.Config
+	// Backend answers operations. A nil Backend makes every
+	// operation unwillingToPerform, which is what the server
+	// did before any database existed.
+	Backend Backend
 }
 
 // Server accepts LDAP connections over TLS.
 type Server struct {
-	cfg Config
+	cfg     Config
+	backend Backend
 
 	mu       sync.Mutex
 	listener net.Listener
@@ -38,7 +43,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.TLS == nil {
 		return nil, ErrNoTLS
 	}
-	return &Server{cfg: cfg}, nil
+	return &Server{cfg: cfg, backend: cfg.Backend}, nil
 }
 
 // Listen opens the listening socket without serving, so a

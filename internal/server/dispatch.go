@@ -45,12 +45,7 @@ func (c *conn) answer(m *ldap.Message) bool {
 	if m.Op == ldap.ReqExtended {
 		return c.extended(m)
 	}
-	// Every operation is plan step 8. Until then the honest
-	// answer is unwillingToPerform, not silence.
-	return c.fail(m, ldap.Result{
-		Code:       ldap.UnwillingToPerform,
-		Diagnostic: "operation not implemented",
-	})
+	return c.operate(m)
 }
 
 // extended answers an ExtendedRequest.

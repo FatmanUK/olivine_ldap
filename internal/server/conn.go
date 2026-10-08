@@ -17,10 +17,15 @@ import (
 // here: there is no poll loop to yield to, so ReadPacket
 // simply blocks.
 type conn struct {
-	net   net.Conn
-	r     *bufio.Reader
-	srv   *Server
+	net net.Conn
+	r   *bufio.Reader
+	srv *Server
+	// bound is set once a bind has succeeded, and raises the
+	// message-size limit as sockbuf_max_incoming does.
 	bound bool
+	// boundDN is the authenticated identity, empty when the
+	// connection is anonymous.
+	boundDN string
 }
 
 // serve reads and dispatches until the client goes away or the
