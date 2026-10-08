@@ -8,7 +8,8 @@ VERSION := $(shell git describe --tags --always --dirty \
 	2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-.PHONY: all build test lint fmt vet style golden golden-build clean help
+.PHONY: all build test race lint fmt vet style golden \
+	golden-build clean help
 
 all: lint test build
 
@@ -19,6 +20,10 @@ build:
 ## test: run the Go unit tests
 test:
 	$(GO) test ./...
+
+## race: run the tests under the race detector
+race:
+	$(GO) test -race ./...
 
 ## lint: gofmt, go vet and the project style invariants
 lint: fmt vet style

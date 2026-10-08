@@ -24,14 +24,24 @@ that have aged worst in the C:
 
 ### Where it stands
 
-- **`internal/ber` is implemented and tested.** Decoder, encoder and a
-  framing reader; 64 tests, 83.9% statement coverage, three fuzz targets run
-  for ~17M executions with no panics, plus an independent cross-check against
-  `encoding/asn1` for the subset where BER and DER agree.
-- Every other package is still a `doc.go` stating what it is ported from.
-- `make lint`, `make test` and `make build` all pass. The binary answers
-  `-version`; invoked as a server it reports that it is not implemented and
-  exits 1.
+- **It serves.** `olivined` listens on TLS, reads LDAPMessages, dispatches
+  them, and answers with well-formed LDAPResults. Verified against the real
+  binary: TLS 1.3 handshake succeeds, and a cleartext LDAP client gets
+  nothing back.
+- **`internal/ber`** — decoder, encoder, framing reader. 64 tests, 83.9%
+  coverage, three fuzz targets run for ~17M executions, cross-checked against
+  `encoding/asn1` where BER and DER agree.
+- **`internal/ldap`** — envelope, operation and response tags, result codes,
+  controls, response encoder. 82.9% coverage, fuzzed for ~10M executions.
+- **`internal/server`** — TLS-only listener, goroutine per connection,
+  dispatch. 80.5% coverage, race-clean.
+- No operation is implemented yet: each is answered
+  `unwillingToPerform`/"operation not implemented", which is the honest
+  reply rather than silence. StartTLS is refused, critical unknown controls
+  draw `unavailableCriticalExtension`, and malformed input draws a notice of
+  disconnection.
+- `internal/{schema,dn,store,golden}` are still `doc.go` only.
+- `make lint`, `make test`, `make race` and `make build` all pass.
 - `make golden` and `make golden-build` exist and fail deliberately,
   pointing at plan step 5.
 - Host toolchain: Go 1.26.5, Podman 5.8.3.
@@ -48,13 +58,16 @@ authoritative for sequencing. In brief:
 1. ~~Reconcile the documentation with reality.~~ Done, `db5fd8e`.
 2. ~~Repository skeleton.~~ Done, `f0bf73e`.
 3. ~~The BER codec, `internal/ber`.~~ Done, `b078080`.
-4. **The protocol layer and the TLS listener.** `internal/ldap` for the
-   RFC 4511 messages and result codes, then `internal/server` for the
-   listener and the operation lifecycle, matching the dispatch at
-   `connection.c:1080-1089`.
+4. ~~The protocol layer and the TLS listener.~~ Done, `59bd65f` and this
+   commit.
 5. **The golden harness, `internal/golden`** — deliberately before schema
    and the operations, so everything after it is verified rather than
-   reasoned about.
+   reasoned about. Podman builds slapd from the submodule and drives a script
+   over TCP; Olivine runs in-process; the transcripts diff. The corpus is the
+   113 entries in `openldap/tests/scripts`.
+6. **Schema subsystem** — attribute types, object classes, syntaxes,
+   matching rules.
+7. **DN handling and the Postgres store.**
 
 The plan carries the ordering beyond that, and three open questions —
 whether `syncrepl.c` is ported at all, whether `cn=config` becomes a
@@ -98,6 +111,27 @@ upstream behaviours that are easy to get wrong:
   `ldap.h:522-548` states every operation that way — `LDAP_REQ_BIND` is
   `0x60`. A decoded form would need re-packing at every comparison.
 - **`ber_put_boolean` writes `0xff` for true**, not `0x01`.
+- **A trailing element after the operation that parses but is not the
+  controls tag is silently ignored**, and the operation proceeds. Only one
+  that fails to parse is an error. `get_ctrls2` (`controls.c:817-823`) sets
+  `SLAPD_DISCONNECT` solely inside `if( tag == LBER_ERROR )`, then falls
+  through with `sr_err` untouched — zero, which is `LDAP_SUCCESS`. Rejecting
+  both would refuse messages upstream accepts.
+- **A BIND abandons every operation already in flight** on that connection,
+  before the operation is even allocated (`connection.c:1633-1636`).
+- **Only three result codes may be sent unsolicited**: `protocolError`,
+  `strongerAuthRequired`, `unavailable` (`result.c`,
+  `LDAP_UNSOLICITED_ERROR`). The notice itself is an ExtendedResponse with
+  message id 0.
+- **Request and response tags are not a fixed offset apart.** Bind is
+  0x60/0x61 and Add 0x68/0x69, but Delete is 0x4a/0x6b and ModDN 0x6c/0x6d,
+  so arithmetic on the request tag is wrong for exactly the operations whose
+  requests are primitive. A table, not a formula.
+- **The extended *response* tags are 0x8a/0x8b** (`ldap.h:513-514`), not the
+  0x80/0x81 of the request.
+- **The per-connection pending-operation cap also doubles after bind**: 100
+  unauthenticated, 1000 authenticated (`slap.h:145-146`), the same pattern as
+  `sockbuf_max_incoming`.
 
 ### 3.2 Architecture
 
@@ -114,6 +148,11 @@ layout. All of these exist as `doc.go` only; the implementations do not.
 | `internal/store` | new — Postgres/GORM, no C analogue |
 | `internal/golden` | new — the oracle |
 | `cmd/olivined` | `servers/slapd` (the daemon entry point) |
+
+Configuration is read from the environment, per the 12-factor departure:
+`OLIVINE_LISTEN` (default `:636`, the ldaps port — there is no 389
+listener), `OLIVINE_TLS_CERT` and `OLIVINE_TLS_KEY`. A missing certificate
+is a configuration error, not a reason to fall back to cleartext.
 
 The operation dispatch to match is `servers/slapd/connection.c:1080-1089`.
 

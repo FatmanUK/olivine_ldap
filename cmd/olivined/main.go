@@ -11,6 +11,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -27,10 +28,31 @@ func main() {
 		return
 	}
 
-	fmt.Fprintln(os.Stderr,
-		"olivined: not implemented yet")
-	fmt.Fprintln(os.Stderr,
-		"The listener is plan step 4; the BER codec it "+
-			"rests on is step 3.")
-	os.Exit(1)
+	cfg, err := configFromEnv()
+	if err != nil {
+		log.Printf("olivined: %v", err)
+		usage()
+		os.Exit(1)
+	}
+	if err := run(cfg); err != nil {
+		// Crash-only: report and die. There is no attempt
+		// to repair state or resume.
+		log.Fatalf("olivined: %v", err)
+	}
+}
+
+// usage names the environment the daemon reads. Configuration
+// comes from the environment, not a slapd.conf — see the
+// 12-factor departure in BOOTSTRAP.md.
+func usage() {
+	fmt.Fprintln(os.Stderr, `
+Configuration comes from the environment:
+
+  OLIVINE_LISTEN     listen address (default :636)
+  OLIVINE_TLS_CERT   certificate file (required)
+  OLIVINE_TLS_KEY    private key file (required)
+
+TLS is mandatory. There is no cleartext listener and no
+STARTTLS, so a missing certificate is a configuration error
+rather than a reason to fall back.`)
 }
