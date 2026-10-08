@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"time"
 
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
@@ -98,4 +99,20 @@ func (s *Store) deadline(
 func timedOut(deadline time.Time) bool {
 	return !deadline.IsZero() &&
 		time.Now().After(deadline)
+}
+
+// cancelled reports whether an operation has been abandoned.
+//
+// A nil context means the caller cannot abandon, which is how the
+// store's own tests and anything not driven by a connection run.
+func cancelled(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
 }

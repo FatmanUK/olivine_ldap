@@ -75,8 +75,9 @@ that have aged worst in the C:
 - **`cn=config` is a read-only projection of the environment**, visible only
   to the administrator, verified through the container with upstream's own
   `ldapsearch`.
-- Not implemented: abandon's actual effect, SASL, and the ACL features listed
-  in §3.3.
+- **Abandon works, and operations run concurrently per connection.** A
+  spawned operation that is abandoned sends nothing at all.
+- Not implemented: SASL, and the ACL features listed in §3.3.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
@@ -129,9 +130,9 @@ authoritative for sequencing. In brief:
 6. ~~Schema subsystem.~~ Done — parsing, the registry, checking, and the
    matching rules and syntax validators.
 7. ~~DN handling and the Postgres store.~~ Done — this commit.
-8. ~~Operations.~~ Bind, search, add, modify, delete, compare, modrdn and the
-   root DSE are wired, schema-checked and golden-verified. Abandon's effect
-   and paged results remain, with SASL still an open question.
+8. ~~Operations.~~ Bind, search, add, modify, delete, compare, modrdn, the
+   root DSE, paged results and abandon are all done. SASL remains an open
+   question — the last one.
 8. **Operations** — bind, search, add/modify/delete/modrdn, compare,
    abandon, root DSE. This is what unblocks most of the 113 upstream test
    scripts as harness corpus.
@@ -225,6 +226,16 @@ upstream behaviours that are easy to get wrong:
   `supportedControl` to decide what to send, so listing an unimplemented
   control is worse than listing none. Olivine advertises paged results and
   nothing else, and refuses StartTLS without advertising it.
+- **Bind, unbind and abandon cannot be abandoned**, which `abandon.c:66-68`
+  names explicitly. An abandon of an unknown message id does nothing at all
+  (`abandon.c:49`), and an abandon never has a response of its own either way.
+- **Abandon is cooperative.** `abandon.c` sets `o_abandon` and the backend
+  "can periodically check this flag and abort the operation at a convenient
+  time"; `result.c` then intercepts the reply. Olivine cancels a context and
+  checks it between entries, the same place the time limit is checked, and
+  sends nothing — not the entries already found, and not a result.
+- **A bind abandons everything in flight and waits**, because the identity
+  those operations were authorised under is about to change.
 - **`rootdn` has no entry and bypasses access control.** That is what lets a
   directory be administered before it holds anything, and why `by * none` does
   not lock out the administrator.
@@ -485,6 +496,10 @@ are not "fixed" back by accident.
 
 ### 3.4 Other
 
+- **Writes to a connection are serialised by a mutex.** Operations run
+  concurrently per connection, and two goroutines each writing a message would
+  interleave their BER and corrupt the stream — the worst bug that concurrency
+  could introduce and the cheapest to prevent. One whole message per `send`.
 - **Go source is 70 columns, tab counted as 8**, and functions are 40 lines
   at most. Both are enforced by `scripts/check-style.sh`, which `make lint`
   runs via `make style`. It reads `git ls-files --cached --others

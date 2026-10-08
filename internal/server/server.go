@@ -99,9 +99,10 @@ func (s *Server) Serve() error {
 func (s *Server) handle(nc net.Conn) {
 	defer s.wg.Done()
 	c := &conn{
-		net: nc,
-		r:   bufio.NewReader(nc),
-		srv: s,
+		net:     nc,
+		r:       bufio.NewReader(nc),
+		srv:     s,
+		running: newInflight(),
 	}
 	c.serve()
 }

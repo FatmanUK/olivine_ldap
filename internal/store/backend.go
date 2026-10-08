@@ -89,6 +89,15 @@ func (s *Store) limited(
 	deadline := s.deadline(req, who)
 	out := make([]ldap.SearchEntry, 0, len(entries))
 	for i := range entries {
+		// Abandon is cooperative, as it is in slapd:
+		// abandon.c sets o_abandon and the backend checks it
+		// "at a convenient time". Between entries is that
+		// time, the same place the time limit is checked.
+		if cancelled(req.Context) {
+			return nil, ldap.Result{
+				Code: ldap.Other,
+			}
+		}
 		if timedOut(deadline) {
 			return out, ldap.Result{
 				Code: ldap.TimeLimitExceeded,

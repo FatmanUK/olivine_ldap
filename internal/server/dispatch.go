@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+
 	"github.com/FatmanUK/openldap_olivine/internal/ber"
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
 )
@@ -20,21 +22,69 @@ func (c *conn) dispatch(m *ldap.Message) bool {
 		// RFC 4511 4.3: unbind has no response.
 		return false
 	}
-	// A bind abandons every operation already in flight.
-	// connection.c:1633-1636 calls connection_abandon( conn )
-	// before the operation is even allocated.
-	if m.Op == ldap.ReqBind {
-		c.abandonAll()
-	}
 	if m.Op == ldap.ReqAbandon {
-		// RFC 4511 4.11: abandon has no response either.
+		// RFC 4511 4.11: abandon has no response, whether
+		// or not it found anything.
+		c.doAbandon(m)
 		return true
 	}
-	return c.answer(m)
+	// A bind abandons every operation already in flight, and
+	// waits for them: connection.c:1633-1636 calls
+	// connection_abandon( conn ) before the operation is even
+	// allocated, because the identity they were authorised
+	// under is about to change.
+	if m.Op == ldap.ReqBind {
+		c.running.cancelAll()
+		c.running.wait()
+		return c.answer(m, context.Background())
+	}
+	c.spawn(m)
+	return true
+}
+
+// spawn runs one operation concurrently.
+//
+// The read loop carries on, so a client can pipeline requests and
+// abandon a slow one — which is the whole point of tracking them.
+func (c *conn) spawn(m *ldap.Message) {
+	ctx := c.running.start(
+		context.Background(), m.ID, m.Op)
+	go func() {
+		defer c.running.done(m.ID)
+		c.answer(m, ctx)
+	}()
+}
+
+// doAbandon cancels the operation a client named.
+//
+// Nothing is sent either way. An unknown message id does nothing
+// at all (abandon.c:49), and bind, unbind and abandon refuse to be
+// abandoned (abandon.c:66-68).
+func (c *conn) doAbandon(m *ldap.Message) {
+	id, err := abandonTarget(m.Body)
+	if err != nil {
+		return
+	}
+	c.running.abandon(id)
+}
+
+// abandonTarget reads the message id an abandon names.
+//
+// The body is the id on its own, which is why ReqAbandon is a
+// primitive tag: RFC 4511 4.11 makes it
+// [APPLICATION 16] MessageID.
+func abandonTarget(body []byte) (int32, error) {
+	return ber.Int32(body)
 }
 
 // answer sends the response for an operation that has one.
-func (c *conn) answer(m *ldap.Message) bool {
+//
+// The returned value says whether the connection stays open; a
+// spawned operation ignores it, because only the read loop can
+// decide to stop reading.
+func (c *conn) answer(
+	m *ldap.Message, ctx context.Context,
+) bool {
 	if oid, bad := ldap.IsCriticalUnsupported(
 		m.Controls); bad {
 		return c.fail(m, ldap.Result{
@@ -45,7 +95,7 @@ func (c *conn) answer(m *ldap.Message) bool {
 	if m.Op == ldap.ReqExtended {
 		return c.extended(m)
 	}
-	return c.operate(m)
+	return c.operate(m, ctx)
 }
 
 // extended answers an ExtendedRequest.
@@ -99,8 +149,3 @@ func (c *conn) fail(m *ldap.Message, r ldap.Result) bool {
 	}
 	return c.send(packet) == nil
 }
-
-// abandonAll drops operations in flight. Nothing runs
-// concurrently yet, so this is a placeholder with a name
-// rather than a silent omission; it gains a body at step 8.
-func (c *conn) abandonAll() {}

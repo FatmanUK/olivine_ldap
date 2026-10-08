@@ -1,13 +1,17 @@
 package server
 
 import (
+	"context"
+
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
 )
 
 // operate dispatches one request to the backend.
 //
 // Returns whether the connection stays open.
-func (c *conn) operate(m *ldap.Message) bool {
+func (c *conn) operate(
+	m *ldap.Message, ctx context.Context,
+) bool {
 	if c.srv.backend == nil {
 		return c.fail(m, ldap.Result{
 			Code:       ldap.UnwillingToPerform,
@@ -18,7 +22,7 @@ func (c *conn) operate(m *ldap.Message) bool {
 	case ldap.ReqBind:
 		return c.doBind(m)
 	case ldap.ReqSearch:
-		return c.doSearch(m)
+		return c.doSearch(m, ctx)
 	case ldap.ReqAdd:
 		return c.doAdd(m)
 	case ldap.ReqDelete:
@@ -67,12 +71,20 @@ func (c *conn) doBind(m *ldap.Message) bool {
 }
 
 // doSearch runs a search, sending entries then the result.
-func (c *conn) doSearch(m *ldap.Message) bool {
+//
+// An abandoned search sends nothing at all — not the entries it had
+// found and not a result. RFC 4511 4.11 gives an abandoned
+// operation no response, and slapd's result.c intercepts the reply
+// of an operation marked o_abandon for the same reason.
+func (c *conn) doSearch(
+	m *ldap.Message, ctx context.Context,
+) bool {
 	req, err := ldap.ParseSearchRequest(m.Body)
 	if err != nil {
 		return c.protocolError(m, err)
 	}
 	req.Controls = m.Controls
+	req.Context = ctx
 	if !req.Scope.Valid() {
 		return c.fail(m, ldap.Result{
 			Code:       ldap.ProtocolError,
@@ -81,6 +93,9 @@ func (c *conn) doSearch(m *ldap.Message) bool {
 	}
 	entries, res, controls := c.srv.backend.Search(
 		req, c.identity())
+	if abandoned(ctx) {
+		return true
+	}
 	for _, e := range entries {
 		packet, err := ldap.EncodeSearchEntry(m.ID, e)
 		if err != nil {
@@ -91,6 +106,11 @@ func (c *conn) doSearch(m *ldap.Message) bool {
 		}
 	}
 	return c.result(m, res, controls)
+}
+
+// abandoned reports whether an operation was cancelled.
+func abandoned(ctx context.Context) bool {
+	return ctx != nil && ctx.Err() != nil
 }
 
 // result sends a result message carrying response controls.

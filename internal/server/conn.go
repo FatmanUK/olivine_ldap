@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 
 	"github.com/FatmanUK/openldap_olivine/internal/ber"
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
@@ -20,6 +21,15 @@ type conn struct {
 	net net.Conn
 	r   *bufio.Reader
 	srv *Server
+	// writes serialises sending, because operations run
+	// concurrently. Two goroutines writing a message each would
+	// interleave their BER and corrupt the stream — the single
+	// worst bug this concurrency could introduce, and the
+	// cheapest to prevent.
+	writes sync.Mutex
+	// running tracks the operations in flight, so abandon has
+	// something to cancel.
+	running *inflight
 	// bound is set once a bind has succeeded, and raises the
 	// message-size limit as sockbuf_max_incoming does.
 	bound bool
@@ -30,8 +40,14 @@ type conn struct {
 
 // serve reads and dispatches until the client goes away or the
 // connection must be dropped.
+//
+// Operations run concurrently, one goroutine each, which is what
+// gives abandon something to abandon — and what a client pipelining
+// requests expects. The read loop itself stays single-threaded:
+// only one goroutine ever touches the BER reader.
 func (c *conn) serve() {
 	defer c.net.Close()
+	defer c.running.wait()
 	for {
 		packet, err := ber.ReadPacket(c.r, c.limit())
 		if err != nil {
@@ -108,7 +124,13 @@ func (c *conn) identity() ldap.Identity {
 }
 
 // send writes one response message.
+//
+// Under the write mutex, and one whole message per call, so a
+// search streaming entries cannot have another operation's result
+// spliced into the middle of one.
 func (c *conn) send(packet []byte) error {
+	c.writes.Lock()
+	defer c.writes.Unlock()
 	_, err := c.net.Write(packet)
 	return err
 }

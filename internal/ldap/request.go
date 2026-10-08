@@ -1,6 +1,7 @@
 package ldap
 
 import (
+	"context"
 	"errors"
 
 	"github.com/FatmanUK/openldap_olivine/internal/ber"
@@ -19,6 +20,9 @@ type SearchRequest struct {
 	TypesOnly    bool
 	Filter       Filter
 	Attributes   []string
+	// Context carries the operation's cancellation, so a long
+	// search can be abandoned. Nil means it cannot be.
+	Context context.Context
 	// Controls are the request's controls, copied from the
 	// enclosing message. They live here rather than being
 	// looked up from the message because the backend needs them
