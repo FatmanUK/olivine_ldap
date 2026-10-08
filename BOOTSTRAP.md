@@ -61,7 +61,10 @@ that have aged worst in the C:
   registers the 208 attribute types and 37 object classes slapd hardcodes in
   `schema_init.c`, derived rather than transcribed by
   `scripts/derive-builtin.sh`.
-- `internal/store` is still `doc.go` only.
+- **`internal/store` persists entries in Postgres.** Add, get, search by all
+  four scopes, modify and delete, verified against Postgres 17 — `make store`
+  starts a throwaway instance and runs them; plain `make test` skips them, so
+  the default suite stays hermetic. See `internal/store/README.md`.
 - `make lint`, `make test`, `make race`, `make build` and `make golden` all
   pass.
 - `make golden` and `make golden-build` exist and fail deliberately,
@@ -88,10 +91,12 @@ authoritative for sequencing. In brief:
    (`schema_init.c`'s normalisation and comparison functions), which is where
    behaviour compatibility is actually won or lost. The definitions are
    parsed; the semantics are not implemented.
-7. **The Postgres store.** DN handling is done — `internal/dn` agrees with
-   slapd on all 35 captured cases. The store itself is next, and it needs a
-   Postgres instance: the scratch schema goes in the connection string, not a
-   `SET search_path` (§3.4).
+7. ~~DN handling and the Postgres store.~~ Done — this commit.
+8. **Operations.** Wire the store to the dispatcher: bind, search with
+   filters (`filter.c`, `filterentry.c`), add/modify/delete/modrdn, compare,
+   root DSE. This is what unblocks most of the 113 upstream test scripts as
+   harness corpus, and what lets the `anonymous-search` golden script stop
+   being Pending.
 8. **Operations** — bind, search, add/modify/delete/modrdn, compare,
    abandon, root DSE. This is what unblocks most of the 113 upstream test
    scripts as harness corpus.
@@ -186,6 +191,17 @@ upstream behaviours that are easy to get wrong:
   still refuses it.
 - **Multi-valued RDNs are sorted**: `sn=b+cn=a` becomes `cn=a+sn=b`, in both
   forms, so two spellings of one RDN compare equal.
+- **`SUBTREE` includes the base entry; `ONELEVEL` and `SUBORDINATE` do not.**
+  The fall-through at `back-mdb/search.c:874-895` encodes it:
+  `SUBORDINATE` — OpenLDAP's extension — is `SUBTREE` minus the base.
+- **A suffix root has no parent in the database.** Nothing holds `dc=com`
+  above `dc=example,dc=com`, so requiring a parent for every multi-RDN DN
+  makes the tree impossible to start. The store holds declared naming
+  contexts, as slapd takes from `suffix "..."`.
+- **RFC 4511 4.6's no-values forms are not no-ops.** A `delete` with no
+  values removes the whole attribute, and so does a `replace` with none. A
+  modification list applies whole or not at all, which is why `Modify` runs
+  in a transaction.
 - **slapd parses the Sync control before deciding whether it supports it**,
   so a valueless Sync control draws `protocolError` "Sync control value is
   absent" rather than `unavailableCriticalExtension`. A test for unsupported
@@ -296,24 +312,29 @@ are not "fixed" back by accident.
 - **Store tests must never share a database with a real world.** The scratch
   schema goes in the connection string, not a `SET search_path`: GORM pools
   connections, so the SET reaches one of them and every other query lands in
-  `public`.
+  `public`. Honoured in `internal/store/testdb_test.go`, and the test
+  Postgres listens on 15432 rather than 5432 so it cannot be confused with a
+  real instance.
+- **Other projects on this machine run their own Postgres containers.**
+  `scripts/postgres-down.sh` removes only the container this project named.
 - **GPG signing times out regularly** (a gnome3 pinentry issue, not a code
   problem). The fix is always to retry the identical `git commit` once the
   user has unlocked the key. Never use `--no-gpg-sign`.
 
 ## 4. Dependency Map
 
-**External Go modules** — `go.mod` exists and declares *no* dependencies.
-Nothing is required until the code that needs it lands, and a module listed
-early is one `go mod tidy` removes again. This is the set expected to arrive,
-with the step that brings it:
+**External Go modules** — GORM and the pgx stack arrived with the store, as
+§4 predicted. `golang.org/x/crypto` is still absent, because Argon2id arrives
+with bind at step 8 and a module listed before its first use is one
+`go mod tidy` removes again.
 
-- `golang.org/x/crypto` — Argon2id (step 8, bind)
 - `gorm.io/gorm` + `gorm.io/driver/postgres` (+ transitive `jackc/pgx`,
-  `pgpassfile`, `pgservicefile`, `puddle`) — persistence (step 7)
+  `pgpassfile`, `pgservicefile`, `puddle`, `jinzhu/inflection`, `jinzhu/now`,
+  `golang.org/x/sync`, `golang.org/x/text`) — persistence. **Present.**
+- `golang.org/x/crypto` — Argon2id (step 8, bind). Not yet.
 
-The BER codec, the protocol layer and the TLS listener need nothing outside
-the standard library.
+The BER codec, the protocol layer, the TLS listener, the schema parser and
+the DN code need nothing outside the standard library.
 
 **External non-Go dependency**:
 

@@ -8,8 +8,8 @@ VERSION := $(shell git describe --tags --always --dirty \
 	2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-.PHONY: all build test race lint fmt vet style golden \
-	golden-build clean help
+.PHONY: all build test race store postgres-down lint fmt vet \
+	style golden golden-build clean help
 
 all: lint test build
 
@@ -24,6 +24,17 @@ test:
 ## race: run the tests under the race detector
 race:
 	$(GO) test -race ./...
+
+## store: run the store tests against a throwaway Postgres
+##        (plain `make test` skips them)
+store:
+	@dsn=$$(./scripts/postgres-up.sh) && \
+		OLIVINE_TEST_DSN="$$dsn" \
+		$(GO) test -count=1 ./internal/store/
+
+## postgres-down: remove the throwaway Postgres
+postgres-down:
+	@./scripts/postgres-down.sh
 
 ## lint: gofmt, go vet and the project style invariants
 lint: fmt vet style
