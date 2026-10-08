@@ -52,7 +52,16 @@ that have aged worst in the C:
   short of a live comparison, since slapd's output includes the operational
   attributes hardcoded in `schema_init.c` that appear in no `.schema` file.
   84.6% coverage.
-- `internal/{dn,store}` are still `doc.go` only.
+- **`internal/dn` matches slapd exactly.** All 35 cases in
+  `internal/dn/testdata/normalised.txt` — captured from slapd's own
+  `dnNormalize` and `dnPretty` via `slapdn`, by
+  `scripts/capture-dn.sh` — agree, for both the normal and the pretty form.
+  92.4% coverage, fuzzed for 12.4M executions.
+- **`internal/schema` also ships the built-in schema.** `schema.Builtin`
+  registers the 208 attribute types and 37 object classes slapd hardcodes in
+  `schema_init.c`, derived rather than transcribed by
+  `scripts/derive-builtin.sh`.
+- `internal/store` is still `doc.go` only.
 - `make lint`, `make test`, `make race`, `make build` and `make golden` all
   pass.
 - `make golden` and `make golden-build` exist and fail deliberately,
@@ -79,8 +88,10 @@ authoritative for sequencing. In brief:
    (`schema_init.c`'s normalisation and comparison functions), which is where
    behaviour compatibility is actually won or lost. The definitions are
    parsed; the semantics are not implemented.
-7. **DN handling and the Postgres store.** `dn.c` normalisation first, since
-   the store's keys depend on it.
+7. **The Postgres store.** DN handling is done — `internal/dn` agrees with
+   slapd on all 35 captured cases. The store itself is next, and it needs a
+   Postgres instance: the scratch schema goes in the connection string, not a
+   `SET search_path` (§3.4).
 8. **Operations** — bind, search, add/modify/delete/modrdn, compare,
    abandon, root DSE. This is what unblocks most of the 113 upstream test
    scripts as harness corpus.
@@ -149,6 +160,32 @@ upstream behaviours that are easy to get wrong:
   `objectIdentifier Attr Base:1` then `attributetype ( Attr:3 ... )`.
 - **`msuser.schema` writes `SYNTAX` in quotes**, which the ABNF forbids and
   slapd accepts.
+- **`core.schema` comments out `cn` and `name`** because `schema_init.c`
+  defines them in C. A registry built from the `.schema` files alone cannot
+  resolve `cn`, and every DN needs it — which is how the built-in set came to
+  be derived. The commented-out definitions are not dead weight; they are a
+  signal that the C owns those types.
+- **Equality matching rules are inherited up the `SUP` chain.** `cn` declares
+  no `EQUALITY` of its own; `caseIgnoreMatch` comes from `name`. Reading only
+  an attribute's own `EQUALITY` leaves `cn` case-*sensitive*, so `CN=Foo Bar`
+  normalises to `cn=Foo Bar` and never matches `cn=foo bar`. Caught by the
+  captured DN corpus.
+- **slapd escapes `=` in DN values** as `\3D`, though RFC 4514 2.4 does not
+  require it outside the first position.
+- **Escapes are always re-emitted as upper-case hex**, never the `\c` short
+  form: `cn=a\,b` normalises to `cn=a\2Cb`, and an input of `\2c` comes
+  back as `\2C`.
+- **Normalise and pretty differ on a trailing escaped space.** `cn=trail\ `
+  normalises to `cn=trail` (insignificant space dropped) but prettifies to
+  `cn=trail\20` (kept, hex-escaped), because pretty does not apply the
+  matching rule.
+- **`;` is a legacy RDN separator** that slapd still accepts and normalises
+  to `,`: `cn=a;dc=x` becomes `cn=a,dc=x`.
+- **The `#hexstring` value form is rejected**, even when the hex decodes to
+  well-formed BER: `cn=#0403616263` is a valid OCTET STRING and `slapdn`
+  still refuses it.
+- **Multi-valued RDNs are sorted**: `sn=b+cn=a` becomes `cn=a+sn=b`, in both
+  forms, so two spellings of one RDN compare equal.
 - **slapd parses the Sync control before deciding whether it supports it**,
   so a valueless Sync control draws `protocolError` "Sync control value is
   absent" rather than `unavailableCriticalExtension`. A test for unsupported

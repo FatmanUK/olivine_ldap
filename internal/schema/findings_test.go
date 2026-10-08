@@ -130,3 +130,24 @@ func TestObjectClassKindDefaultsStructural(t *testing.T) {
 		t.Errorf("kind = %v, want STRUCTURAL", oc.Kind)
 	}
 }
+
+// core.schema comments out cn and name because schema_init.c
+// defines them in C. A registry built from the files alone
+// cannot resolve cn, and every DN needs it.
+func TestBuiltinSuppliesCN(t *testing.T) {
+	r, err := NewDefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		"cn", "commonName", "name", "objectClass",
+		"2.5.4.3",
+	} {
+		if _, ok := r.AttributeType(name); !ok {
+			t.Errorf("%s missing from builtin", name)
+		}
+	}
+	if _, ok := r.ObjectClass("top"); !ok {
+		t.Error("top missing from the built-in schema")
+	}
+}

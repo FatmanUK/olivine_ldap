@@ -1,0 +1,66 @@
+# DN cases for scripts/capture-dn.sh to put through slapd's
+# own dnNormalize and dnPretty. One per line; # is a comment.
+#
+# The point is to cover what RFC 4514 leaves room to get wrong,
+# not to be tidy: case folding, spacing, escapes, hex forms,
+# multi-valued RDNs, and attributes with different matching
+# rules.
+
+# Plain
+dc=example,dc=com
+cn=admin,dc=example,dc=com
+
+# Case: attribute descriptions and caseIgnoreMatch values
+CN=Foo Bar,DC=Example,DC=COM
+cn=FOO BAR,dc=example,dc=com
+
+# Spacing around separators and within values
+cn=Foo Bar,  dc=example,  dc=com
+CN=  spaced  ,DC=y
+cn=a  b,dc=x
+
+# Escapes: RFC 4514 2.4
+cn=a\, b,dc=x
+cn=a\,b,dc=x
+cn=a\+b,dc=x
+cn=a\=b,dc=x
+cn=a\\b,dc=x
+cn=a\"b,dc=x
+cn=a\<b,dc=x
+cn=a\>b,dc=x
+cn=a\;b,dc=x
+cn=\#hash,dc=x
+cn=lead\ space,dc=x
+cn=trail\ ,dc=x
+
+# Hex escapes
+cn=a\2Cb,dc=x
+cn=a\2cb,dc=x
+
+# Hex-encoded (BER) attribute values: RFC 4514 2.4
+cn=#41,dc=z
+cn=#0441424344,dc=z
+
+# Multi-valued RDN
+cn=a+sn=b,dc=x
+sn=b+cn=a,dc=x
+
+# Non-ASCII
+cn=Ω,dc=unicode
+cn=café,dc=unicode
+
+# Empty and degenerate
+cn=,dc=x
+dc=com
+
+# Unknown attribute type
+unknownAttr=value,dc=x
+
+# OID-form attribute type
+2.5.4.3=value,dc=x
+
+# Malformed
+cn
+cn=a,,dc=x
+=value,dc=x
+cn=a,dc=
