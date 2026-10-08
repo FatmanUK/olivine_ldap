@@ -73,6 +73,9 @@ Configuration comes from the environment:
                      "olivined -hash <password>" to make one; a
                      plaintext credential in the environment is
                      visible to ps and to a container inspect
+  OLIVINE_SIZELIMIT  maximum entries per search (default 500,
+                     as slapd's sizelimit)
+  OLIVINE_TIMELIMIT  maximum seconds per search (default 3600)
 
 TLS is mandatory. There is no cleartext listener and no
 STARTTLS, so a missing certificate is a configuration error

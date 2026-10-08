@@ -41,6 +41,13 @@ golden-acl:
 		$(GO) test -tags golden -count=1 -v \
 			-run TestGoldenACL ./internal/golden/
 
+## golden-limits: compare search limits against the C
+golden-limits:
+	@dsn=$$(./scripts/postgres-up.sh) && \
+		OLIVINE_TEST_DSN="$$dsn" \
+		$(GO) test -tags golden -count=1 -v \
+			-run TestGoldenLimits ./internal/golden/
+
 ## postgres-down: remove the throwaway Postgres
 postgres-down:
 	@./scripts/postgres-down.sh

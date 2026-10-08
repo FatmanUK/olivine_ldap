@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/FatmanUK/openldap_olivine/internal/server"
 	"github.com/FatmanUK/openldap_olivine/internal/store"
@@ -34,6 +35,11 @@ type config struct {
 	// the same format userPassword uses.
 	rootDN       string
 	rootPassword string
+	// sizeLimit and timeLimit are the administrative search
+	// limits, as slapd's sizelimit and timelimit. Zero means
+	// slapd's own defaults.
+	sizeLimit int32
+	timeLimit int32
 }
 
 // defaultAddr is the ldaps port. There is no 389 listener:
@@ -56,6 +62,8 @@ func configFromEnv() (config, error) {
 		rootDN:      os.Getenv("OLIVINE_ROOT_DN"),
 		rootPassword: os.Getenv(
 			"OLIVINE_ROOT_PASSWORD_HASH"),
+		sizeLimit: envInt("OLIVINE_SIZELIMIT"),
+		timeLimit: envInt("OLIVINE_TIMELIMIT"),
 	}
 	if c.addr == "" {
 		c.addr = defaultAddr
@@ -105,4 +113,24 @@ func printHash(password string) {
 		log.Fatalf("olivined: hashing: %v", err)
 	}
 	fmt.Println(hashed)
+}
+
+// envInt reads a non-negative integer from the environment, zero
+// when unset or unreadable.
+//
+// A malformed value reads as unset rather than failing the start:
+// the limits have working defaults, and a directory that refuses
+// to come up over a typo in an optional tuning knob is worse than
+// one that uses slapd's own numbers.
+func envInt(name string) int32 {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		log.Printf("olivined: ignoring %s=%q", name, raw)
+		return 0
+	}
+	return int32(n)
 }

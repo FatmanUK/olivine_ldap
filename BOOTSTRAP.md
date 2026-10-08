@@ -62,8 +62,11 @@ that have aged worst in the C:
   `cn=Subschema` by `scripts/derive-standard.sh`. A Go-only binary resolves
   `dc`, `ou` and `person` with no submodule, which is what lets the CI — which
   checks out without submodules — actually run the store tests.
-- Not implemented: abandon's actual effect, SASL, paged results, controls,
-  limits, and the ACL features listed in §3.3.
+- **Search limits work**, compared against slapd by `make golden-limits`:
+  size, the request-versus-administrator minimum, the exactly-at-limit edge,
+  and the `rootdn` bypass.
+- Not implemented: abandon's actual effect, SASL, paged results, controls, and
+  the ACL features listed in §3.3.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
@@ -165,6 +168,19 @@ upstream behaviours that are easy to get wrong:
   `ldap.h:522-548` states every operation that way — `LDAP_REQ_BIND` is
   `0x60`. A decoded form would need re-packing at every comparison.
 - **`ber_put_boolean` writes `0xff` for true**, not `0x01`.
+- **`sizeLimitExceeded` means there were *more* than the limit.** A search
+  matching exactly the limit answers success. The entries found are returned
+  alongside the overrun, not discarded.
+- **The lower of the request's and the administrator's size limit wins**, and
+  zero on either side means that side is unlimited rather than the smallest: a
+  request for 10 against `sizelimit 2` gets 2, and so does a request for 0.
+- **`rootdn` is not subject to the size limit.**
+- **slapd's own defaults are 500 entries and 3600 seconds**, so an
+  unconfigured directory is not unlimited.
+- **Which entries a truncated search returns is not specified.** slapd
+  truncates in index order and Olivine by DN, so the golden scripts for limits
+  compare the result code and the count and not the set — asserting the set
+  would assert something neither implementation promises.
 - **`back-mdb` renames a whole subtree.** Renaming `ou=people` with children
   beneath it answers success, not `notAllowedOnNonLeaf`. Delete refuses a
   non-leaf; ModDN does not, and assuming the two behave alike is wrong.

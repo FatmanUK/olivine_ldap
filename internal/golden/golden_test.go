@@ -52,7 +52,8 @@ func compare(
 	if err != nil {
 		t.Fatalf("olivine: %v", err)
 	}
-	same := got.String() == want.String()
+	same := got.Render(script.ResultsOnly) ==
+		want.Render(script.ResultsOnly)
 
 	if script.Pending != "" {
 		reportPending(t, script, same, want, got)
@@ -62,7 +63,8 @@ func compare(
 		t.Errorf("transcripts differ\n"+
 			"--- oracle (C) ---\n%s"+
 			"--- olivine (Go) ---\n%s",
-			want.String(), got.String())
+			want.Render(script.ResultsOnly),
+			got.Render(script.ResultsOnly))
 	}
 }
 

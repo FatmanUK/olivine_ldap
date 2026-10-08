@@ -57,6 +57,9 @@ func openBackend(c config) (server.Backend, error) {
 	if err := applyRootDN(s, c); err != nil {
 		return nil, err
 	}
+	s.SetLimits(store.Limits{
+		Size: c.sizeLimit, Time: c.timeLimit,
+	})
 	return store.NewAdapter(s), nil
 }
 

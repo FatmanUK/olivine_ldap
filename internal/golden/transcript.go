@@ -93,3 +93,25 @@ func writeAttrs(b *strings.Builder, attrs []Attribute) {
 		}
 	}
 }
+
+// Summary renders a transcript without its entries, keeping the
+// count.
+//
+// Used where the entries cannot be compared but the outcome can:
+// see Script.ResultsOnly.
+func (t *Transcript) Summary() string {
+	var b strings.Builder
+	for i, s := range t.Steps {
+		fmt.Fprintf(&b, "%d %s -> %s (%d entries)\n",
+			i, s.Op, s.Result, len(s.Entries))
+	}
+	return b.String()
+}
+
+// Render returns the form to compare, honouring resultsOnly.
+func (t *Transcript) Render(resultsOnly bool) string {
+	if resultsOnly {
+		return t.Summary()
+	}
+	return t.String()
+}

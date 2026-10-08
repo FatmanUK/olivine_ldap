@@ -111,11 +111,14 @@ func runPair(
 	if err != nil {
 		t.Fatalf("olivine %s: %v", script.Name, err)
 	}
-	if got.String() != want.String() {
+	if got.Render(script.ResultsOnly) !=
+		want.Render(script.ResultsOnly) {
 		t.Errorf("%s differs\n"+
 			"--- oracle (C) ---\n%s"+
 			"--- olivine (Go) ---\n%s",
-			script.Name, want.String(), got.String())
+			script.Name,
+			want.Render(script.ResultsOnly),
+			got.Render(script.ResultsOnly))
 	}
 }
 

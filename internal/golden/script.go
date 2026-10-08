@@ -54,6 +54,16 @@ func AdminBind() Request {
 type Script struct {
 	Name     string
 	Requests []Request
+	// ResultsOnly compares the result codes and the number of
+	// entries, but not which entries came back.
+	//
+	// For a size-limited search that is the only honest
+	// comparison: nothing in RFC 4511 says *which* entries a
+	// truncated search returns, and the two servers truncate in
+	// their own traversal orders — slapd in index order,
+	// Olivine ordered by DN. Comparing the sets would assert
+	// something neither implementation promises.
+	ResultsOnly bool
 	// Pending explains why the two are expected to differ,
 	// and is empty for a script that must match.
 	//

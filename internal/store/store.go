@@ -32,6 +32,9 @@ type Store struct {
 	// which exists outside the database. See SetRootDN.
 	rootDN       string
 	rootPassword string
+	// limits are the administrative search limits. The zero
+	// value means DefaultLimits.
+	limits Limits
 }
 
 // New returns a Store over an open GORM connection.

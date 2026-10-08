@@ -150,3 +150,26 @@ func modDNBody(
 	}
 	return out
 }
+
+// limitedSearchBody encodes a subtree SearchRequest carrying a
+// size limit.
+func limitedSearchBody(
+	base string, filter func(*ber.Encoder), size int32,
+) []byte {
+	e := ber.NewEncoder()
+	e.String(ldap.TagLDAPDN, base)
+	e.Enum(ber.TagEnumerated, int32(ldap.ScopeSubtree))
+	e.Enum(ber.TagEnumerated, 0)
+	e.Int32(ber.TagInteger, size)
+	e.Int32(ber.TagInteger, 0)
+	e.Bool(ber.TagBoolean, false)
+	filter(e)
+	e.Begin(ber.TagSequence)
+	e.String(ber.TagOctetString, "cn")
+	e.End()
+	out, err := e.Bytes()
+	if err != nil {
+		panic(err)
+	}
+	return out
+}

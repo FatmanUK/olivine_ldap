@@ -47,8 +47,56 @@ func (s *Store) BackendSearch(
 	if err != nil {
 		return nil, resultFor(err)
 	}
-	return s.collectEntries(entries, req, who),
-		ldap.Result{Code: ldap.Success}
+	return s.limited(entries, req, who)
+}
+
+// limited applies the size and time limits to a search.
+//
+// The entries up to the limit are returned *and* the overrun is
+// reported: slapd sends what it has and then sizeLimitExceeded,
+// rather than discarding the lot. A result of exactly the limit is
+// success — code 4 means there were more, which the oracle showed
+// by answering success for a filter matching exactly the limit.
+func (s *Store) limited(
+	entries []Entry, req *ldap.SearchRequest,
+	who Identity,
+) ([]ldap.SearchEntry, ldap.Result) {
+	size := s.effectiveSize(req, who)
+	deadline := s.deadline(req, who)
+	out := make([]ldap.SearchEntry, 0, len(entries))
+	for i := range entries {
+		if timedOut(deadline) {
+			return out, ldap.Result{
+				Code: ldap.TimeLimitExceeded,
+			}
+		}
+		e := &entries[i]
+		if !s.visible(e, req, who) {
+			continue
+		}
+		if size > 0 && int32(len(out)) == size {
+			// One more matched than the limit allows.
+			return out, ldap.Result{
+				Code: ldap.SizeLimitExceeded,
+			}
+		}
+		out = append(out, s.project(e, req, who))
+	}
+	return out, ldap.Result{Code: ldap.Success}
+}
+
+// visible reports whether an entry is a result at all: readable,
+// and matching the filter.
+func (s *Store) visible(
+	e *Entry, req *ldap.SearchRequest, who Identity,
+) bool {
+	// Each entry in its own right: a subtree search crosses
+	// entries with different access.
+	if s.accessTo(who, e.DN, acl.EntryAttribute) <
+		acl.Read {
+		return false
+	}
+	return Matches(s.schema, e, req.Filter)
 }
 
 // searchRootDSE answers a search of the empty DN.
@@ -65,28 +113,6 @@ func (s *Store) searchRootDSE(
 	}
 	return []ldap.SearchEntry{s.rootDSE(req)},
 		ldap.Result{Code: ldap.Success}
-}
-
-// collectEntries filters and projects the matching entries.
-func (s *Store) collectEntries(
-	entries []Entry, req *ldap.SearchRequest,
-	who Identity,
-) []ldap.SearchEntry {
-	out := make([]ldap.SearchEntry, 0, len(entries))
-	for i := range entries {
-		e := &entries[i]
-		// Each entry is checked in its own right: a subtree
-		// search crosses entries with different access.
-		lvl := s.accessTo(who, e.DN, acl.EntryAttribute)
-		if lvl < acl.Read {
-			continue
-		}
-		if !Matches(s.schema, e, req.Filter) {
-			continue
-		}
-		out = append(out, s.project(e, req, who))
-	}
-	return out
 }
 
 // BackendAdd creates an entry.
