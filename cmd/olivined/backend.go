@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/FatmanUK/openldap_olivine/internal/acl"
+	"github.com/FatmanUK/openldap_olivine/internal/gss"
 	"github.com/FatmanUK/openldap_olivine/internal/schema"
 	"github.com/FatmanUK/openldap_olivine/internal/server"
 	"github.com/FatmanUK/openldap_olivine/internal/store"
@@ -50,6 +51,9 @@ func openBackend(c config) (server.Backend, error) {
 	if err := s.Migrate(); err != nil {
 		return nil, fmt.Errorf("migrating: %w", err)
 	}
+	if err := applyKeytab(s, c); err != nil {
+		return nil, err
+	}
 	if err := bootstrap(s, c); err != nil {
 		return nil, err
 	}
@@ -59,6 +63,24 @@ func openBackend(c config) (server.Backend, error) {
 	// stay wrong indefinitely, and a poll cannot.
 	go refreshConfig(s, c.configRefresh)
 	return store.NewAdapter(s), nil
+}
+
+// applyKeytab turns GSSAPI on, if a keytab is configured.
+//
+// A keytab that cannot be read fails the start rather than
+// quietly disabling the mechanism: an operator who named one
+// means to serve Kerberos, and a server that came up advertising
+// EXTERNAL and PLAIN instead would look like a client problem.
+func applyKeytab(s *store.Store, c config) error {
+	if c.keytab == "" {
+		return nil
+	}
+	acceptor, err := gss.NewAcceptor(c.keytab)
+	if err != nil {
+		return err
+	}
+	s.SetGSSAcceptor(acceptor)
+	return nil
 }
 
 // bootstrap settles the configuration.

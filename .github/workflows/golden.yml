@@ -83,6 +83,13 @@ jobs:
       - name: Container smoke test
         run: make pod-build pod-run
 
+      # A GSSAPI bind, driven at both servers by upstream's own
+      # ldapwhoami against a KDC stood up for the occasion.
+      # After the smoke test because it needs the image that
+      # step builds.
+      - name: SASL GSSAPI
+        run: make golden-gssapi
+
       - name: Tear down
         if: always()
         run: make postgres-down

@@ -1,6 +1,9 @@
 package ldap
 
-import "github.com/FatmanUK/openldap_olivine/internal/ber"
+import (
+	"github.com/FatmanUK/openldap_olivine/internal/ber"
+	"github.com/FatmanUK/openldap_olivine/internal/gss"
+)
 
 // BindRequest is RFC 4511 4.2.
 type BindRequest struct {
@@ -28,6 +31,11 @@ type BindRequest struct {
 	// client presented none. Filled in by the server, which is
 	// the only part that can see the TLS state.
 	External string
+	// GSS is the connection's GSSAPI exchange state, which a
+	// multi-round mechanism needs to survive between bind
+	// requests. Owned by the server, which owns the
+	// connection; nil when no connection does.
+	GSS *gss.Context
 }
 
 // ParseBindRequest decodes a BindRequest body.

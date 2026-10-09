@@ -67,6 +67,11 @@ golden-sasl:
 		$(GO) test -tags golden -count=1 -v \
 			-run TestGoldenSASLExternal ./internal/golden/
 
+## golden-gssapi: compare a SASL GSSAPI bind against the C
+##                (needs the oracle and the deployment images)
+golden-gssapi:
+	@./scripts/gssapi-compare.sh
+
 ## postgres-down: remove the throwaway Postgres
 postgres-down:
 	@./scripts/postgres-down.sh

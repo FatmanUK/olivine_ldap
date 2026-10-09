@@ -10,24 +10,41 @@ import (
 // means the client certificate. PLAIN carries a DN and password in
 // the credential, and is only safe because the transport is always
 // encrypted here — RFC 4616 2 requires exactly that.
+//
+// GSSAPI is Kerberos 5, and is advertised only when a keytab is
+// configured — see Store.Mechanisms.
 const (
 	MechExternal = "EXTERNAL"
 	MechPlain    = "PLAIN"
+	MechGSSAPI   = "GSSAPI"
 )
 
-// SASLMechanisms are advertised on the root DSE, and are the only
-// ones a bind will accept.
+// SASLMechanisms are the ones that need no configuration.
 //
-// GSSAPI is absent because it is not implemented, not because it
-// cannot work over TLS: slapd hands the TLS strength and the peer
-// certificate to its SASL layer the moment the handshake completes
-// (connection.c:1400-1419), and channel binding exists for
-// precisely that pairing. What GSSAPI needs here is a Kerberos
-// implementation, which is a dependency decision rather than a
-// protocol obstacle.
+// slapd hands the TLS strength and the peer certificate to its
+// SASL layer the moment the handshake completes
+// (connection.c:1400-1419), so SASL over TLS is the intended
+// pairing rather than a conflict — the whole of this list works
+// over ldaps, and so does GSSAPI.
 var SASLMechanisms = []string{
 	MechExternal,
 	MechPlain,
+}
+
+// Mechanisms are what this server will accept, which is what the
+// root DSE advertises.
+//
+// GSSAPI appears only when a keytab is configured. slapd
+// advertises it whenever Cyrus has the plugin, keytab or not,
+// which means a client can select a mechanism that cannot
+// possibly succeed; advertising only what is configured is a
+// deliberate divergence and the more useful answer.
+func (s *Store) Mechanisms() []string {
+	out := append([]string(nil), SASLMechanisms...)
+	if s.gss != nil {
+		out = append(out, MechGSSAPI)
+	}
+	return out
 }
 
 // saslBind dispatches a SASL bind.
@@ -44,6 +61,8 @@ func (s *Store) saslBind(
 		return s.bindExternal(req)
 	case MechPlain:
 		return s.bindPlain(req, who)
+	case MechGSSAPI:
+		return s.bindGSSAPI(req)
 	}
 	return Identity{}, ldap.Result{
 		Code: ldap.AuthMethodNotSupported,

@@ -78,7 +78,19 @@ Configuration comes from the environment:
                      certificates. With it the server requests
                      one and verifies it, and a SASL EXTERNAL
                      bind can use it as an identity; a client
-                     presenting none is still served
+                     presenting none is still served`)
+	usageAuth()
+}
+
+// usageAuth names the rest, split from usage() only to keep that
+// function inside the length rule.
+func usageAuth() {
+	fmt.Fprintln(os.Stderr, `
+  OLIVINE_KRB5_KEYTAB
+                     Kerberos keytab holding this service's keys,
+                     as MIT's KRB5_KTNAME names. With it, SASL
+                     GSSAPI is advertised and accepted; without
+                     it, it is neither
   OLIVINE_SIZELIMIT  maximum entries per search (default 500,
                      as slapd's sizelimit)
   OLIVINE_TIMELIMIT  maximum seconds per search (default 3600)

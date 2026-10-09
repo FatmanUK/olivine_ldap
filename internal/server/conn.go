@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/FatmanUK/openldap_olivine/internal/ber"
+	"github.com/FatmanUK/openldap_olivine/internal/gss"
 	"github.com/FatmanUK/openldap_olivine/internal/ldap"
 )
 
@@ -43,6 +44,11 @@ type conn struct {
 	// loop sets it while a spawned operation may read it.
 	saslMu   sync.Mutex
 	saslMech string
+	// gss is the GSSAPI exchange's state, which has to survive
+	// between bind requests. One per connection, discarded
+	// whenever the mechanism changes, and guarded by saslMu
+	// for the same reason saslMech is.
+	gss *gss.Context
 }
 
 // saslInProgress reports whether a multi-step SASL bind is
@@ -53,11 +59,26 @@ func (c *conn) saslInProgress() bool {
 	return c.saslMech != ""
 }
 
-// setSASL records or clears the in-progress mechanism.
+// setSASL records or clears the in-progress mechanism, and
+// discards any mechanism state along with it.
 func (c *conn) setSASL(mech string) {
 	c.saslMu.Lock()
 	c.saslMech = mech
+	if mech == "" {
+		c.gss = nil
+	}
 	c.saslMu.Unlock()
+}
+
+// gssContext is the connection's GSSAPI state, created on the
+// first step of an exchange.
+func (c *conn) gssContext() *gss.Context {
+	c.saslMu.Lock()
+	defer c.saslMu.Unlock()
+	if c.gss == nil {
+		c.gss = &gss.Context{}
+	}
+	return c.gss
 }
 
 // serve reads and dispatches until the client goes away or the

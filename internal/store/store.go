@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/FatmanUK/openldap_olivine/internal/dn"
+	"github.com/FatmanUK/openldap_olivine/internal/gss"
 	"github.com/FatmanUK/openldap_olivine/internal/schema"
 )
 
@@ -21,6 +22,11 @@ var (
 type Store struct {
 	db     *gorm.DB
 	schema *schema.Registry
+	// gss holds the Kerberos service keys, nil when no keytab
+	// is configured and GSSAPI is therefore not offered. Set
+	// once before serving, like the schema, so it needs no
+	// guard.
+	gss *gss.Acceptor
 	// configState holds the configuration in force — the
 	// suffixes, the access policy, the root identity and the
 	// limits. It lives behind an atomic pointer because

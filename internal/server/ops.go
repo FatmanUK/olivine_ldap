@@ -154,6 +154,9 @@ func (c *conn) beginBind(req *ldap.BindRequest) {
 	// The transport's identity, which EXTERNAL binds as. Only
 	// the server can see it.
 	req.External = peerDN(c.net)
+	if req.IsSASL {
+		req.GSS = c.gssContext()
+	}
 }
 
 // trackSASL keeps the connection's SASL state in step with the
@@ -171,6 +174,7 @@ func (c *conn) trackSASL(req *ldap.BindRequest) {
 		// exchange so far is discarded rather than carried
 		// into a different mechanism.
 		c.saslMech = req.Mechanism
+		c.gss = nil
 		return
 	}
 	c.saslMech = req.Mechanism
@@ -182,7 +186,7 @@ func (c *conn) bindResult(
 	m *ldap.Message, r ldap.Result,
 ) bool {
 	packet, err := ldap.EncodeBindResponse(
-		m.ID, r, nil, false)
+		m.ID, r, r.SASLCreds, r.SASLCreds != nil)
 	if err != nil {
 		return false
 	}

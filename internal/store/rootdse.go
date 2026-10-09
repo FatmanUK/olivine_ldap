@@ -84,7 +84,7 @@ func (s *Store) rootDSEAttrs(
 		{"supportedExtension",
 			supportedExtensions, true},
 		{"supportedSASLMechanisms",
-			SASLMechanisms, true},
+			s.Mechanisms(), true},
 		{"supportedLDAPVersion", []string{"3"}, true},
 		{"subschemaSubentry",
 			[]string{subschemaDN}, true},

@@ -47,6 +47,12 @@ type config struct {
 	// replica reaches the others. Zero disables the refresh,
 	// which only makes sense for a single instance.
 	configRefresh time.Duration
+	// keytab is the Kerberos keytab holding the service's
+	// long-term keys. Without it GSSAPI is neither advertised
+	// nor accepted. Environmental, like the TLS material and
+	// for the same reason: it is a file the process must read
+	// before it can serve anything.
+	keytab string
 	// clientCA, when set, makes the server request a client
 	// certificate and verify it against these authorities. A
 	// client that presents none is still served, as slapd's
@@ -78,6 +84,7 @@ func configFromEnv() (config, error) {
 		sizeLimit: envInt("OLIVINE_SIZELIMIT"),
 		timeLimit: envInt("OLIVINE_TIMELIMIT"),
 		clientCA:  os.Getenv("OLIVINE_TLS_CLIENT_CA"),
+		keytab:    os.Getenv("OLIVINE_KRB5_KEYTAB"),
 		configRefresh: refreshInterval(
 			"OLIVINE_CONFIG_REFRESH"),
 	}

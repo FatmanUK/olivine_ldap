@@ -8,6 +8,12 @@ type Result struct {
 	MatchedDN  string
 	Diagnostic string
 	Referral   []string
+	// SASLCreds is serverSaslCreds on a bind response, the
+	// mechanism's own data travelling back. Non-nil means the
+	// field is sent; a multi-round mechanism needs that,
+	// because an empty token and no token are different
+	// messages. Only Bind reads it.
+	SASLCreds []byte
 }
 
 // EncodeResultWithControls builds a result message carrying

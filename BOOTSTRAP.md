@@ -87,7 +87,11 @@ that have aged worst in the C:
   `ldapwhoami -Y EXTERNAL`.
 - **whoami (RFC 4532) is implemented**, which is what makes `ldapwhoami` work
   at all and the quickest way to see what a bind actually did.
-- Not implemented: GSSAPI — see §3.3 — and the ACL features listed there.
+- **GSSAPI works**, over `gokrb5` — pure Go, no libkrb5, so the scratch image
+  is unchanged. `make golden-gssapi` stands up a KDC, points upstream's own
+  `ldapwhoami -Y GSSAPI` at slapd and at Olivine in turn, and compares the
+  DN each reports. Both answer `dn:uid=tester,cn=gssapi,cn=auth`.
+- Not implemented: the ACL features listed in §3.3.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
@@ -464,6 +468,19 @@ upstream behaviours that are easy to get wrong:
   (`bconfig.c:6186-6200`) and emits the index on the way out. `olcAccess`
   needs it: the first matching clause decides, so the order *is* the policy.
 - **A deletion of a value that is not present is `noSuchAttribute`.**
+- **A SASL GSSAPI bind is three LDAP round trips, and the middle request
+  carries no credentials field.** Captured from upstream's own `ldapwhoami`
+  through a logging proxy: request one is the initial context token with the
+  AP-REQ, the answer is the AP-REP; request two has the mechanism name and
+  *no* credentials octet string, and the answer is the security-layer offer;
+  request three is the client's choice, and the answer is success with no
+  credentials at all. A server that required a present-but-empty credential
+  on the second step would refuse every MIT client.
+- **slapd layers GSSAPI confidentiality on top of TLS by default.** A
+  GSSAPI bind over `ldaps://` reported `SASL SSF: 256`, identical to the same
+  bind over `ldap://`, so the second layer is not suppressed because the
+  first exists. `-O maxssf=0` is what asks for no layer, and the bind then
+  succeeds with the same DN.
 - **Configuration DNs must be compared case-insensitively.**
   `olcDatabase={1}postgres` is mixed case, and comparing a lower-cased search
   base against the entry's own spelling silently found nothing — so a
@@ -483,6 +500,7 @@ layout. All of these are implemented.
 | `internal/schema` | `servers/slapd/{at,oc,syntax,mr,schema_init}.c` |
 | `internal/dn` | `servers/slapd/dn.c` |
 | `internal/store` | new — Postgres/GORM, no C analogue |
+| `internal/gss` | new — `sasl.c` delegates GSSAPI to Cyrus and MIT, so there is no C to port; what is ported is the observed exchange |
 | `internal/golden` | new — the oracle |
 | `cmd/olivined` | `servers/slapd` (the daemon entry point) |
 
@@ -527,11 +545,53 @@ are not "fixed" back by accident.
   SASL or GSSAPI.** What a SASL *security layer* should not do over TLS is
   negotiate its own confidentiality on top, which is a `qop` setting rather
   than an obstacle.
-- **GSSAPI is not implemented**, and that is a dependency decision rather than
-  a protocol one. It needs a Kerberos implementation — `gokrb5` is the
-  realistic pure-Go choice — and a KDC in the harness to compare against. The
-  oracle image now carries `libsasl2-modules-gssapi-mit` and `krb5-kdc` ready
-  for that.
+- **GSSAPI is implemented**, over `gokrb5`, and compared against the C by
+  `make golden-gssapi`. The exchange was captured from upstream's own
+  `ldapwhoami` talking to slapd through a logging proxy rather than read out
+  of RFC 4752, which settled two things no reading would have: the client's
+  second bind request carries **no credentials field at all** — not an empty
+  one — and the whole thing is three LDAP round trips.
+- **Only the no-security-layer GSSAPI option is offered.** slapd offers
+  integrity and confidentiality too, and MIT's client takes confidentiality
+  by default — over `ldaps://` that is a second layer of encryption inside
+  the first, which the oracle was observed doing (`SASL SSF: 256` over TLS).
+  Olivine is TLS-only, so there is nothing left for a SASL security layer to
+  protect: it offers `0x01` alone and refuses a client that insists on more.
+  Visible to a client only as `SASL SSF: 0`.
+- **No acceptor subkey is sent in the AP-REP.** RFC 4121 4.1 allows either,
+  and omitting it means the per-message key is the one already agreed — the
+  authenticator's subkey when the client sent one, the ticket session key
+  otherwise — which is one fewer secret to generate. The visible consequence
+  is that the client's Wrap tokens carry no AcceptorSubkey flag.
+- **The derived DN omits the realm when it is the server's own.** slapd
+  composes `uid=<user>,cn=<realm>,cn=<mech>,cn=auth` in
+  `slap_sasl_getdn` (`sasl.c:1957-2010`), but the realm RDN only appears
+  when Cyrus passes a realm through, and it does not when the realm is the
+  default. Observed: `tester@OLIVINE.TEST` against a slapd in that realm
+  gives `dn:uid=tester,cn=gssapi,cn=auth`. Olivine matches, and names the
+  realm when it differs — a case the single-realm harness cannot compare, so
+  it is reasoned rather than verified and marked as such.
+- **GSSAPI is advertised only when a keytab is configured.** slapd advertises
+  it whenever Cyrus has the plugin, keytab or not, so a client can select a
+  mechanism that cannot possibly succeed. `OLIVINE_KRB5_KEYTAB` is what turns
+  it on, and a keytab that cannot be read fails the start rather than
+  quietly disabling the mechanism.
+- **A GSSAPI authorization identity is refused**, like EXTERNAL's and
+  PLAIN's. slapd maps one through `authz-regexp` and `authz-to` rules that
+  Olivine does not carry; honouring the request without the rules would grant
+  more than was asked for.
+- **gokrb5 is a client library, and the acceptor side shows it.** It can read
+  an AP-REP but not write one, and it ships `NewInitiatorWrapToken` with no
+  acceptor counterpart — so `internal/gss` writes the AP-REP itself and
+  builds the acceptor's Wrap token, where both the flags and the key usage
+  change direction. Getting either wrong fails as a bad checksum rather than
+  as a type error, which is why there are unit tests for the negotiation half
+  and a comparison against the C for the rest.
+- **`WrapToken.SetCheckSum` does not set `EC`.** It computes the checksum and
+  leaves the field claiming zero length, so a marshalled acceptor token has
+  the payload where the client looks for the checksum. RFC 4121 4.2.6.2 makes
+  `EC` the checksum's length on an unsealed token; `internal/gss` sets it
+  after signing.
 - **EXTERNAL completes in one round where slapd takes two.** slapd's
   Cyrus-backed EXTERNAL answers `saslBindInProgress` first; RFC 4422 3 allows
   either, and a conformant client loops until the result is not
@@ -677,14 +737,21 @@ are not "fixed" back by accident.
 ## 4. Dependency Map
 
 **External Go modules** — GORM and the pgx stack arrived with the store, as
-§4 predicted. `golang.org/x/crypto` is still absent, because Argon2id arrives
-with bind at step 8 and a module listed before its first use is one
-`go mod tidy` removes again.
+§4 predicted. Every dependency here is one a specific feature needed; a
+module listed before its first use is one `go mod tidy` removes again.
 
 - `gorm.io/gorm` + `gorm.io/driver/postgres` (+ transitive `jackc/pgx`,
   `pgpassfile`, `pgservicefile`, `puddle`, `jinzhu/inflection`, `jinzhu/now`,
   `golang.org/x/sync`, `golang.org/x/text`) — persistence. **Present.**
-- `golang.org/x/crypto` — Argon2id (step 8, bind). Not yet.
+- `golang.org/x/crypto` — Argon2id, for `userPassword` and the root
+  password. **Present**, since the bind work at step 8.
+- `github.com/jcmturner/gokrb5/v8` + `github.com/jcmturner/gofork` (+
+  transitive `aescts`, `dnsutils`, `rpc`, `goidentity`, `hashicorp/go-uuid`,
+  `golang.org/x/net`) — Kerberos 5, for SASL GSSAPI. **Present.** Pure Go:
+  no cgo, no libkrb5, so the scratch image is unaffected. It is a *client*
+  library, which shows in two places — it can read an AP-REP but not write
+  one, and it ships `NewInitiatorWrapToken` with no acceptor counterpart —
+  so `internal/gss` supplies both (see §3.3).
 
 The BER codec, the protocol layer, the TLS listener, the schema parser and
 the DN code need nothing outside the standard library.
@@ -778,8 +845,9 @@ output. Use `[]byte`.
 
 Every package is tested. Counting top-level `Test` functions: `internal/ber`
 22, `internal/ldap` 34, `internal/server` 30, `internal/schema` 23,
-`internal/store` 101, `internal/acl` 7, `internal/dn` 1 (table-driven, over
-a corpus derived from slapd itself), `internal/golden` 11, `cmd/olivined` 4.
+`internal/store` 104, `internal/acl` 7, `internal/dn` 1 (table-driven, over
+a corpus derived from slapd itself), `internal/gss` 9, `internal/golden` 11,
+`cmd/olivined` 4.
 The store's tests skip unless `OLIVINE_TEST_DSN` or `TEST_DATABASE_URL`
 names a reachable Postgres, so `make test` alone does not exercise them —
 `make store` does, and the CI sets the variable so the service container is
@@ -799,7 +867,23 @@ rather than discarded.
 The comparisons are `make golden` (protocol), `golden-data` (search and the
 root DSE, plus `TestDataScriptsAreNotVacuous` — two servers agreeing about
 silence proves nothing), `golden-acl` (nine policies), `golden-limits`,
-`golden-paged` and `golden-sasl`. `make pod-run` is the end-to-end check: it
+`golden-paged`, `golden-sasl` and `golden-gssapi`.
+
+`golden-gssapi` is shaped differently from the others, and deliberately: the
+client is upstream's own `ldapwhoami`, driven at each server in turn, because
+a GSSAPI *initiator* written in Go would be a second implementation of the
+thing under test. It stands up a KDC in the oracle container — rootless, uid
+10001, paths under `/data` and the KDC above port 1024 — issues a service
+principal and keytab for each server, and compares the DN each reports.
+Olivine never contacts the KDC: an acceptor decrypts the ticket with its own
+keytab, which is also why its scratch image needs no `krb5.conf`.
+
+One trap worth recording, because its error message points at the wrong
+thing: podman's DNS answers with its own search domain appended, so a client
+canonicalising the host asks for `ldap/<host>.dns.podman` and then derives a
+realm named after it. The failure reads `Server krbtgt/DNS.PODMAN@... not
+found in Kerberos database`, which looks like a KDC fault. `-N`
+(`SASL_NOCANON`) is the fix, and the harness passes it. `make pod-run` is the end-to-end check: it
 stands up the scratch image against a throwaway Postgres and drives it with
 upstream's own `ldapsearch`, `ldapmodify` and `ldapwhoami` — including a
 write to `cn=config` whose effect is then read back.
