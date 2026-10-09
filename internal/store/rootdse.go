@@ -58,12 +58,17 @@ var supportedControls = []string{
 	ldap.OIDPagedResults,
 }
 
+// supportedExtensions are the extended operations Olivine
+// implements, and so the only ones it advertises.
+var supportedExtensions = []string{
+	ldap.OIDWhoAmI,
+}
+
 // rootDSEAttrs lists everything the root DSE can carry.
 //
-// Deliberately absent: supportedExtension, because Olivine
-// implements no extended operation and advertising StartTLS while
-// refusing it would be a lie, and supportedFeatures for the same
-// reason.
+// supportedExtension names whoami and nothing else. StartTLS is
+// refused, so advertising it would be a lie; supportedFeatures is
+// absent for the same reason.
 //
 // configContext *is* advertised, because the tree exists — but
 // only to a caller who can read it. Naming a tree that answers
@@ -76,6 +81,10 @@ func (s *Store) rootDSEAttrs(
 		{"objectClass", rootDSEClasses, false},
 		{"namingContexts", s.Suffixes(), true},
 		{"supportedControl", supportedControls, true},
+		{"supportedExtension",
+			supportedExtensions, true},
+		{"supportedSASLMechanisms",
+			SASLMechanisms, true},
 		{"supportedLDAPVersion", []string{"3"}, true},
 		{"subschemaSubentry",
 			[]string{subschemaDN}, true},

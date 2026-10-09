@@ -34,8 +34,30 @@ type conn struct {
 	// message-size limit as sockbuf_max_incoming does.
 	bound bool
 	// boundDN is the authenticated identity, empty when the
-	// connection is anonymous.
-	boundDN string
+	// connection is anonymous. boundPretty is the same DN in
+	// the form to show a client; see ldap.Identity.
+	boundDN     string
+	boundPretty string
+	// saslMech is the mechanism of a SASL bind in progress,
+	// empty when none is. Guarded by saslMu, because the read
+	// loop sets it while a spawned operation may read it.
+	saslMu   sync.Mutex
+	saslMech string
+}
+
+// saslInProgress reports whether a multi-step SASL bind is
+// part-way through.
+func (c *conn) saslInProgress() bool {
+	c.saslMu.Lock()
+	defer c.saslMu.Unlock()
+	return c.saslMech != ""
+}
+
+// setSASL records or clears the in-progress mechanism.
+func (c *conn) setSASL(mech string) {
+	c.saslMu.Lock()
+	c.saslMech = mech
+	c.saslMu.Unlock()
 }
 
 // serve reads and dispatches until the client goes away or the
@@ -120,7 +142,9 @@ func (c *conn) disconnect(why string) {
 // anonymous, which is what access control sees when it checks
 // auth on userPassword.
 func (c *conn) identity() ldap.Identity {
-	return ldap.Identity{DN: c.boundDN}
+	return ldap.Identity{
+		DN: c.boundDN, Pretty: c.boundPretty,
+	}
 }
 
 // send writes one response message.

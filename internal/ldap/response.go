@@ -128,3 +128,29 @@ const OIDNoticeOfDisconnection = "1.3.6.1.4.1.1466.20036"
 // TLS-only, so starttls.c is not ported. See BOOTSTRAP.md
 // 3.3, and ldap.h:412.
 const OIDStartTLS = "1.3.6.1.4.1.1466.20037"
+
+// EncodeBindResponse builds a BindResponse, optionally carrying
+// serverSaslCreds.
+//
+//	BindResponse ::= [APPLICATION 1] SEQUENCE {
+//		COMPONENTS OF LDAPResult,
+//		serverSaslCreds [7] OCTET STRING OPTIONAL }
+//
+// The credentials are the server's half of a multi-step SASL
+// exchange. A mechanism that completes in one step — EXTERNAL —
+// sends none, and the field is omitted rather than sent empty.
+func EncodeBindResponse(
+	id int32, r Result, saslCreds []byte, has bool,
+) ([]byte, error) {
+	e := ber.NewEncoder()
+	e.Begin(TagMessage)
+	e.Int32(TagMsgID, id)
+	e.Begin(ResBind)
+	writeResultFields(e, r)
+	if has {
+		e.OctetString(TagSASLResCreds, saslCreds)
+	}
+	e.End()
+	e.End()
+	return e.Bytes()
+}

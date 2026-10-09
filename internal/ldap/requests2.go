@@ -6,12 +6,28 @@ import "github.com/FatmanUK/openldap_olivine/internal/ber"
 type BindRequest struct {
 	Version int32
 	Name    string
-	// Simple is the password on a simple bind. SASL is an
-	// open question (plan step 8); Mechanism is set when the
-	// choice was SASL so a caller can refuse it precisely.
-	Simple    string
-	IsSASL    bool
-	Mechanism string
+	// Simple is the password on a simple bind.
+	Simple string
+	// IsSASL, Mechanism and Credentials describe a SASL bind.
+	//
+	//	SaslCredentials ::= SEQUENCE {
+	//		mechanism   LDAPString,
+	//		credentials OCTET STRING OPTIONAL }
+	//
+	// HasCredentials separates an absent credentials field from
+	// an empty one. EXTERNAL cares: slapd refuses a *present*
+	// credential with "proxy authorization not supported"
+	// (sasl.c:1756-1759), because that field would be an
+	// authorization identity to impersonate.
+	IsSASL         bool
+	Mechanism      string
+	Credentials    []byte
+	HasCredentials bool
+	// External is the identity the transport authenticated: the
+	// client certificate's subject DN under TLS, empty when the
+	// client presented none. Filled in by the server, which is
+	// the only part that can see the TLS state.
+	External string
 }
 
 // ParseBindRequest decodes a BindRequest body.
@@ -35,12 +51,9 @@ func ParseBindRequest(body []byte) (*BindRequest, error) {
 		r.Simple = string(content)
 	case AuthSASL:
 		r.IsSASL = true
-		sd := ber.NewDecoder(content)
-		mech, err := nextString(sd)
-		if err != nil {
+		if err := readSASL(r, content); err != nil {
 			return nil, err
 		}
-		r.Mechanism = mech
 	default:
 		return nil, ErrBadRequest
 	}
@@ -110,4 +123,23 @@ func ParseCompareRequest(
 	return &CompareRequest{
 		Entry: entry, Attribute: attr, Value: value,
 	}, nil
+}
+
+// readSASL decodes the SaslCredentials choice.
+func readSASL(r *BindRequest, content []byte) error {
+	d := ber.NewDecoder(content)
+	mech, err := nextString(d)
+	if err != nil {
+		return err
+	}
+	r.Mechanism = mech
+	if d.Done() {
+		return nil
+	}
+	_, creds, err := d.Next()
+	if err != nil {
+		return ErrBadRequest
+	}
+	r.Credentials, r.HasCredentials = creds, true
+	return nil
 }

@@ -46,6 +46,7 @@ func (c *conn) doBind(m *ldap.Message) bool {
 	if err != nil {
 		return c.protocolError(m, err)
 	}
+	c.beginBind(req)
 	// RFC 4511 4.2: a version other than 3 is
 	// protocolError. Olivine serves LDAPv3 only.
 	if req.Version != ldap.Version3 {
@@ -61,13 +62,13 @@ func (c *conn) doBind(m *ldap.Message) bool {
 		// client's own spelling will not compare against
 		// stored entries.
 		c.boundDN = who.DN
-	} else {
-		// A failed bind drops any previous identity: RFC
-		// 4513 4.4.2 makes the connection anonymous.
-		c.bound = false
-		c.boundDN = ""
+		c.boundPretty = who.Pretty
+		c.setSASL("")
 	}
-	return c.fail(m, res)
+	if res.Code != ldap.SASLBindInProgress {
+		c.setSASL("")
+	}
+	return c.bindResult(m, res)
 }
 
 // doSearch runs a search, sending entries then the result.
@@ -134,4 +135,56 @@ func (c *conn) protocolError(
 		Code:       ldap.ProtocolError,
 		Diagnostic: err.Error(),
 	})
+}
+
+// beginBind resets the connection's authentication state before a
+// bind runs.
+//
+// Every bind drops the current identity first, as
+// connection2anonymous does in bind.c:65: a bind that fails must
+// not leave the previous identity in place.
+func (c *conn) beginBind(req *ldap.BindRequest) {
+	c.bound = false
+	c.boundDN = ""
+	c.boundPretty = ""
+	// A simple bind cancels any SASL exchange under way
+	// (bind.c:285-296); a SASL bind that changes mechanism
+	// mid-exchange resets it (bind.c:266-272).
+	c.trackSASL(req)
+	// The transport's identity, which EXTERNAL binds as. Only
+	// the server can see it.
+	req.External = peerDN(c.net)
+}
+
+// trackSASL keeps the connection's SASL state in step with the
+// bind that has just arrived.
+func (c *conn) trackSASL(req *ldap.BindRequest) {
+	if !req.IsSASL {
+		// Not SASL: cancel anything in progress.
+		c.setSASL("")
+		return
+	}
+	c.saslMu.Lock()
+	defer c.saslMu.Unlock()
+	if c.saslMech != "" && c.saslMech != req.Mechanism {
+		// The mechanism changed between steps, so the
+		// exchange so far is discarded rather than carried
+		// into a different mechanism.
+		c.saslMech = req.Mechanism
+		return
+	}
+	c.saslMech = req.Mechanism
+}
+
+// bindResult sends a bind response, carrying serverSaslCreds when
+// the mechanism has more to say.
+func (c *conn) bindResult(
+	m *ldap.Message, r ldap.Result,
+) bool {
+	packet, err := ldap.EncodeBindResponse(
+		m.ID, r, nil, false)
+	if err != nil {
+		return false
+	}
+	return c.send(packet) == nil
 }

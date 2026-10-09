@@ -85,6 +85,15 @@ func abandonTarget(body []byte) (int32, error) {
 func (c *conn) answer(
 	m *ldap.Message, ctx context.Context,
 ) bool {
+	// While a SASL bind is part-way through, nothing else may
+	// run: connection.c:1103-1111 answers operationsError with
+	// "SASL bind in progress" for any other operation.
+	if m.Op != ldap.ReqBind && c.saslInProgress() {
+		return c.fail(m, ldap.Result{
+			Code:       ldap.OperationsError,
+			Diagnostic: "SASL bind in progress",
+		})
+	}
 	if oid, bad := ldap.IsCriticalUnsupported(
 		m.Controls); bad {
 		return c.fail(m, ldap.Result{
@@ -117,6 +126,9 @@ func (c *conn) answer(
 // guess, and the diagnostic is upstream's wording verbatim.
 func (c *conn) extended(m *ldap.Message) bool {
 	oid := extendedOID(m.Body)
+	if oid == ldap.OIDWhoAmI {
+		return c.whoAmI(m)
+	}
 	if oid == ldap.OIDStartTLS {
 		return c.fail(m, ldap.Result{
 			Code:       ldap.OperationsError,
@@ -144,6 +156,22 @@ func extendedOID(body []byte) string {
 func (c *conn) fail(m *ldap.Message, r ldap.Result) bool {
 	packet, err := ldap.EncodeResult(
 		m.ID, responseTag(m.Op), r)
+	if err != nil {
+		return false
+	}
+	return c.send(packet) == nil
+}
+
+// whoAmI answers RFC 4532.
+//
+// The identity is the connection's, so this is the one operation
+// that tells an administrator what a bind actually did — which is
+// why it is worth implementing even though nothing else needs an
+// extended operation.
+func (c *conn) whoAmI(m *ldap.Message) bool {
+	value, has := ldap.WhoAmIValue(c.identity())
+	packet, err := ldap.EncodeExtendedResponse(
+		m.ID, ldap.Result{Code: ldap.Success}, value, has)
 	if err != nil {
 		return false
 	}

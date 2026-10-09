@@ -23,11 +23,16 @@ import (
 func (s *Store) SetRootDN(
 	rawDN, hashedPassword string,
 ) error {
-	norm, _, err := s.normalise(rawDN)
+	norm, pretty, err := s.normalise(rawDN)
+	if err != nil {
+		return err
+	}
+	_ = pretty
 	if err != nil {
 		return err
 	}
 	s.rootDN = norm
+	s.rootPretty = pretty
 	s.rootPassword = hashedPassword
 	return nil
 }
@@ -58,8 +63,11 @@ func (s *Store) bindAsRoot(
 			Code: ldap.InvalidCredentials,
 		}, true
 	}
-	return Identity{DN: s.rootDN},
-		ldap.Result{Code: ldap.Success}, true
+	// The rootdn has no entry, so there is no stored pretty
+	// form; the configured spelling is the best there is.
+	return Identity{
+		DN: s.rootDN, Pretty: s.rootPretty,
+	}, ldap.Result{Code: ldap.Success}, true
 }
 
 // rootLevel is the access the administrator has: everything.

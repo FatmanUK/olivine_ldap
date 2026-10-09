@@ -73,6 +73,12 @@ Configuration comes from the environment:
                      "olivined -hash <password>" to make one; a
                      plaintext credential in the environment is
                      visible to ps and to a container inspect
+  OLIVINE_TLS_CLIENT_CA
+                     authorities that may issue client
+                     certificates. With it the server requests
+                     one and verifies it, and a SASL EXTERNAL
+                     bind can use it as an identity; a client
+                     presenting none is still served
   OLIVINE_SIZELIMIT  maximum entries per search (default 500,
                      as slapd's sizelimit)
   OLIVINE_TIMELIMIT  maximum seconds per search (default 3600)

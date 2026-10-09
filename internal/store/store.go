@@ -31,6 +31,7 @@ type Store struct {
 	// rootDN and rootPassword are the administrative identity,
 	// which exists outside the database. See SetRootDN.
 	rootDN       string
+	rootPretty   string
 	rootPassword string
 	// limits are the administrative search limits. The zero
 	// value means DefaultLimits.

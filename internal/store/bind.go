@@ -22,13 +22,7 @@ func (s *Store) BackendBind(
 	req *ldap.BindRequest, who Identity,
 ) (Identity, ldap.Result) {
 	if req.IsSASL {
-		// SASL is still an open question; refusing by name
-		// is more useful than a generic failure.
-		return Identity{}, ldap.Result{
-			Code: ldap.AuthMethodNotSupported,
-			Diagnostic: "SASL mechanism " +
-				req.Mechanism + " not supported",
-		}
+		return s.saslBind(req, who)
 	}
 	if req.Name == "" && req.Simple == "" {
 		// Anonymous: success, and the identity stays empty.
@@ -77,10 +71,12 @@ func (s *Store) checkCredentials(
 			continue
 		}
 		if VerifyPassword(v.Value, req.Simple) {
-			// e.DN is the normalised form, which is what
-			// an access check can compare.
-			return Identity{DN: e.DN},
-				ldap.Result{Code: ldap.Success}
+			// Both forms: the normalised DN is what an
+			// access check compares, and the pretty one
+			// is what whoami shows.
+			return Identity{
+				DN: e.DN, Pretty: e.PrettyDN,
+			}, ldap.Result{Code: ldap.Success}
 		}
 	}
 	return Identity{}, bad

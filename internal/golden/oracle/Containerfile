@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	build-essential \
 	libssl-dev \
 	libltdl-dev \
+	libsasl2-dev \
 	groff-base \
 	&& rm -rf /var/lib/apt/lists/*
 
@@ -23,8 +24,10 @@ WORKDIR /usr/src/openldap
 # bookworm and Olivine uses Postgres anyway. back-mdb is
 # bundled, so the oracle has a working database without it.
 #
-# --without-cyrus-sasl: SASL is an open question (plan step 8);
-# the oracle only needs simple bind over TLS for now.
+# Cyrus SASL is in, because a SASL bind cannot be compared without
+# it: built --without-cyrus-sasl, neither slapd nor ldapwhoami can
+# do one at all, and the root DSE advertises no mechanism. The
+# GSSAPI plugin comes with it in the runtime stage below.
 RUN ./configure \
 	--prefix=/opt/openldap \
 	--enable-slapd \
@@ -32,16 +35,22 @@ RUN ./configure \
 	--disable-bdb \
 	--disable-hdb \
 	--with-tls=openssl \
-	--without-cyrus-sasl \
-	--disable-spasswd \
+	--with-cyrus-sasl \
+	--enable-spasswd \
 	&& make depend \
 	&& make \
 	&& make install
 
 FROM docker.io/library/debian:bookworm-slim
 
+# libsasl2-modules carries PLAIN and the rest; the gssapi module
+# and the Kerberos clients are for comparing a GSSAPI bind, which
+# needs a KDC to issue tickets.
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	libssl3 libltdl7 \
+	libsasl2-2 libsasl2-modules \
+	libsasl2-modules-gssapi-mit \
+	krb5-user krb5-kdc krb5-admin-server \
 	&& rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /opt/openldap /opt/openldap

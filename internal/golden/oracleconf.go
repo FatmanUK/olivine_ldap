@@ -1,18 +1,10 @@
 package golden
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"math/big"
-	"net"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 // slapdConf is the oracle's configuration.
@@ -34,6 +26,11 @@ argsfile /data/slapd.args
 
 TLSCertificateFile /config/cert.pem
 TLSCertificateKeyFile /config/key.pem
+TLSCACertificateFile /config/ca.pem
+# try, not demand: a certificate is an identity for SASL
+# EXTERNAL to bind as, not an admission ticket, so a client
+# that presents none is still served.
+TLSVerifyClient try
 
 database mdb
 suffix "dc=example,dc=com"
@@ -56,55 +53,32 @@ func writeOracleConfig(dir, extra string) error {
 		conf, []byte(text), 0o644); err != nil {
 		return err
 	}
-	return writeKeyPair(dir)
+	// The shared material, not a fresh set: see sharedTLS.
+	return copyTLSMaterial(dir)
 }
 
-// writeKeyPair generates the oracle's TLS certificate. It is
-// self-signed and lives for an hour: the client skips
-// verification, because the certificate is not under test.
+// writeKeyPair generates the oracle's TLS material: a CA, a
+// server certificate signed by it, and a client certificate for
+// SASL EXTERNAL to bind as.
+//
+// A CA rather than a self-signed server certificate, because
+// EXTERNAL needs a client certificate the server will accept, and
+// both sides have to trust the same issuer for the comparison to
+// mean anything.
 func writeKeyPair(dir string) error {
-	key, err := ecdsa.GenerateKey(
-		elliptic.P256(), rand.Reader)
+	ca, caKey, err := makeCA()
 	if err != nil {
 		return err
 	}
-	der, err := selfSigned(key)
-	if err != nil {
+	if err := writeCA(dir, ca, caKey); err != nil {
 		return err
 	}
-	err = writePEMFile(filepath.Join(dir, "cert.pem"),
-		"CERTIFICATE", der)
-	if err != nil {
+	if err := writeSigned(dir, "", ca, caKey,
+		serverSubject()); err != nil {
 		return err
 	}
-	keyDER, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return err
-	}
-	// slapd reads the key as the container user, so it must
-	// be world-readable inside the read-only mount.
-	return writePEMFile(filepath.Join(dir, "key.pem"),
-		"EC PRIVATE KEY", keyDER)
-}
-
-// selfSigned issues the certificate.
-func selfSigned(key *ecdsa.PrivateKey) ([]byte, error) {
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "localhost"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-		KeyUsage: x509.KeyUsageDigitalSignature |
-			x509.KeyUsageCertSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		IPAddresses: []net.IP{
-			net.ParseIP("127.0.0.1"),
-		},
-		DNSNames: []string{"localhost"},
-	}
-	return x509.CreateCertificate(
-		rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	return writeSigned(dir, "client", ca, caKey,
+		clientSubject())
 }
 
 // writePEMFile writes one PEM block at mode 0644.

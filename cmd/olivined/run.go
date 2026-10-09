@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log"
@@ -40,6 +41,12 @@ type config struct {
 	// slapd's own defaults.
 	sizeLimit int32
 	timeLimit int32
+	// clientCA, when set, makes the server request a client
+	// certificate and verify it against these authorities. A
+	// client that presents none is still served, as slapd's
+	// `TLSVerifyClient try` does: the certificate is an
+	// identity for SASL EXTERNAL, not an admission ticket.
+	clientCA string
 }
 
 // defaultAddr is the ldaps port. There is no 389 listener:
@@ -64,6 +71,7 @@ func configFromEnv() (config, error) {
 			"OLIVINE_ROOT_PASSWORD_HASH"),
 		sizeLimit: envInt("OLIVINE_SIZELIMIT"),
 		timeLimit: envInt("OLIVINE_TIMELIMIT"),
+		clientCA:  os.Getenv("OLIVINE_TLS_CLIENT_CA"),
 	}
 	if c.addr == "" {
 		c.addr = defaultAddr
@@ -84,9 +92,14 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
+	clientCAs, err := loadClientCAs(c)
+	if err != nil {
+		return err
+	}
 	s, err := server.New(server.Config{
-		Addr:    c.addr,
-		Backend: backend,
+		Addr:      c.addr,
+		Backend:   backend,
+		ClientCAs: clientCAs,
 		TLS: &tls.Config{
 			Certificates: []tls.Certificate{pair},
 			MinVersion:   tls.VersionTLS12,
@@ -133,4 +146,23 @@ func envInt(name string) int32 {
 		return 0
 	}
 	return int32(n)
+}
+
+// loadClientCAs reads the authorities that may issue client
+// certificates, or nil when none is configured.
+func loadClientCAs(c config) (*x509.CertPool, error) {
+	if c.clientCA == "" {
+		return nil, nil
+	}
+	pemBytes, err := os.ReadFile(c.clientCA)
+	if err != nil {
+		return nil, fmt.Errorf("client CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, fmt.Errorf(
+			"client CA %s holds no certificate",
+			c.clientCA)
+	}
+	return pool, nil
 }

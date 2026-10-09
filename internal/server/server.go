@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"net"
 	"sync"
@@ -25,6 +26,14 @@ type Config struct {
 	// operation unwillingToPerform, which is what the server
 	// did before any database existed.
 	Backend Backend
+	// ClientCAs, when set, makes the server *request* a client
+	// certificate and verify it against these authorities. A
+	// client that presents none is still served — the
+	// certificate is an identity for SASL EXTERNAL to bind as,
+	// not an admission ticket. That is what slapd's
+	// `TLSVerifyClient try` does, and demanding one would lock
+	// out every client that binds by password.
+	ClientCAs *x509.CertPool
 }
 
 // Server accepts LDAP connections over TLS.
@@ -42,6 +51,15 @@ type Server struct {
 func New(cfg Config) (*Server, error) {
 	if cfg.TLS == nil {
 		return nil, ErrNoTLS
+	}
+	if cfg.ClientCAs != nil {
+		// Clone, so a caller's tls.Config is not mutated
+		// under it.
+		tc := cfg.TLS.Clone()
+		tc.ClientCAs = cfg.ClientCAs
+		// Verify if given, require nothing: see ClientCAs.
+		tc.ClientAuth = tls.VerifyClientCertIfGiven
+		cfg.TLS = tc
 	}
 	return &Server{cfg: cfg, backend: cfg.Backend}, nil
 }

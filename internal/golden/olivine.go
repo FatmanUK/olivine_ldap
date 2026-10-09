@@ -39,13 +39,16 @@ func StartOlivineWith(b Backend) (*Olivine, error) {
 		return nil, err
 	}
 	o := &Olivine{dir: dir, backend: b}
-	if err := writeKeyPair(dir); err != nil {
+	// The same material the oracle gets, so a SASL EXTERNAL
+	// bind presents one certificate to both.
+	shared, err := sharedTLSDir()
+	if err != nil {
 		o.Stop()
 		return nil, err
 	}
 	pair, err := tls.LoadX509KeyPair(
-		filepath.Join(dir, "cert.pem"),
-		filepath.Join(dir, "key.pem"))
+		filepath.Join(shared, "cert.pem"),
+		filepath.Join(shared, "key.pem"))
 	if err != nil {
 		o.Stop()
 		return nil, err
@@ -59,9 +62,16 @@ func StartOlivineWith(b Backend) (*Olivine, error) {
 
 // listen starts the server on an ephemeral port.
 func (o *Olivine) listen(pair tls.Certificate) error {
+	// Verify a client certificate if one is offered, as the
+	// oracle's `TLSVerifyClient try` does.
+	clientCAs, err := clientCAPool()
+	if err != nil {
+		return err
+	}
 	s, err := server.New(server.Config{
-		Addr:    "127.0.0.1:0",
-		Backend: o.backend,
+		Addr:      "127.0.0.1:0",
+		Backend:   o.backend,
+		ClientCAs: clientCAs,
 		TLS: &tls.Config{
 			Certificates: []tls.Certificate{pair},
 			MinVersion:   tls.VersionTLS12,

@@ -39,9 +39,18 @@ func Run(addr string, script Script) (*Transcript, error) {
 func runSteps(
 	c io.ReadWriter, script Script,
 ) (*Transcript, error) {
+	return runStepsFrom(c, script, 1)
+}
+
+// runStepsFrom is runSteps with the message ids starting
+// elsewhere, for a script that follows an exchange on the same
+// connection.
+func runStepsFrom(
+	c io.ReadWriter, script Script, firstID int32,
+) (*Transcript, error) {
 	t := &Transcript{}
 	for i, req := range script.Requests {
-		packet, err := req.Encode(int32(i + 1))
+		packet, err := req.Encode(firstID + int32(i))
 		if err != nil {
 			return nil, err
 		}

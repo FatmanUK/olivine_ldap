@@ -77,7 +77,14 @@ that have aged worst in the C:
   `ldapsearch`.
 - **Abandon works, and operations run concurrently per connection.** A
   spawned operation that is abandoned sends nothing at all.
-- Not implemented: SASL, and the ACL features listed in §3.3.
+- **SASL works over TLS**, which is the normal configuration and not a
+  problem to be proxied around. EXTERNAL binds as the client certificate and
+  PLAIN carries a DN and password; `make golden-sasl` compares EXTERNAL
+  against the C, and `make pod-run` binds to the container with upstream's own
+  `ldapwhoami -Y EXTERNAL`.
+- **whoami (RFC 4532) is implemented**, which is what makes `ldapwhoami` work
+  at all and the quickest way to see what a bind actually did.
+- Not implemented: GSSAPI — see §3.3 — and the ACL features listed there.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
   disconnection.
@@ -236,6 +243,19 @@ upstream behaviours that are easy to get wrong:
   sends nothing — not the entries already found, and not a result.
 - **A bind abandons everything in flight and waits**, because the identity
   those operations were authorised under is about to change.
+- **An X.509 subject and an LDAP DN run in opposite directions.** A
+  certificate written `C=GB, O=Olivine, CN=client` becomes
+  `cn=client,o=Olivine,c=GB`; building the DN in certificate order gives
+  something that looks right and names nothing. Go's `pkix.Name.String()`
+  already emits RFC 2253 order, which is the LDAP one.
+- **An *empty* SASL credential is not proxy authorization.** `sasl.c:1756`
+  tests `orb_cred.bv_len`, and upstream's `ldapwhoami` sends the field present
+  and empty on its second round — refusing on *presence* makes a real client
+  fail with "proxy authorization not supported". Found by pointing
+  `ldapwhoami` at the container.
+- **A client certificate is an identity, not an admission ticket.** slapd's
+  `TLSVerifyClient try` verifies one if offered and serves a client that
+  presents none; demanding one would lock out everyone who binds by password.
 - **`rootdn` has no entry and bypasses access control.** That is what lets a
   directory be administered before it holds anything, and why `by * none` does
   not lock out the administrator.
@@ -453,6 +473,32 @@ are not "fixed" back by accident.
   rather than a moving branch. This is the upstream C reference.
 
 **Compatibility choices:**
+
+- **SASL over TLS is the intended pairing, not a conflict.** slapd hands the
+  TLS strength and the peer certificate to its SASL layer the moment the
+  handshake completes (`connection.c:1400-1419`) and then calls
+  `slap_sasl_cbinding` to bind the exchange to the channel. Over `ldaps://`
+  slapd advertises GSSAPI, GSS-SPNEGO and GS2-KRB5 among others, and a SASL
+  PLAIN bind over `ldaps://` runs to completion. **No proxy is needed for
+  SASL or GSSAPI.** What a SASL *security layer* should not do over TLS is
+  negotiate its own confidentiality on top, which is a `qop` setting rather
+  than an obstacle.
+- **GSSAPI is not implemented**, and that is a dependency decision rather than
+  a protocol one. It needs a Kerberos implementation — `gokrb5` is the
+  realistic pure-Go choice — and a KDC in the harness to compare against. The
+  oracle image now carries `libsasl2-modules-gssapi-mit` and `krb5-kdc` ready
+  for that.
+- **EXTERNAL completes in one round where slapd takes two.** slapd's
+  Cyrus-backed EXTERNAL answers `saslBindInProgress` first; RFC 4422 3 allows
+  either, and a conformant client loops until the result is not
+  `saslBindInProgress`. Proven interoperable: upstream's `ldapwhoami -Y
+  EXTERNAL` binds to Olivine in one round and reports the right DN.
+- **SASL PLAIN checks `userPassword` directly.** slapd routes it through Cyrus
+  SASL's own auxprop backend, so a PLAIN bind against a stock slapd answers
+  "user not found: Password verification failed" even for a user whose
+  `userPassword` is correct. Checking the directory is what almost everyone
+  configures slapd to do eventually, and doing it by default is less
+  surprising than delegating to a store Olivine does not have.
 
 - **ACL features deliberately refused rather than approximated.**
   `filter=` selectors, `group=`/`set=`/`ssf=` subjects, the regex and expand

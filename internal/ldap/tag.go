@@ -44,6 +44,12 @@ const (
 	TagNewSuperior  ber.Tag = 0x80
 	TagExopReqOID   ber.Tag = 0x80
 	TagExopReqValue ber.Tag = 0x81
+	// TagSASLResCreds is serverSaslCreds on a bind response,
+	// from ldap.h:519. It shares its value with the present
+	// filter and with requestName, which is harmless: a tag
+	// only has to be unambiguous within the element that
+	// carries it.
+	TagSASLResCreds ber.Tag = 0x87
 	TagExopResOID   ber.Tag = 0x8a
 	TagExopResValue ber.Tag = 0x8b
 )

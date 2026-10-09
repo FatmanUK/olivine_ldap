@@ -136,3 +136,24 @@ func TestRootDSEAdvertisesOnlyWhatWorks(t *testing.T) {
 		}
 	}
 }
+
+// whoami is implemented, so it is advertised; StartTLS is
+// refused, so it is not.
+func TestRootDSEAdvertisesWhoAmI(t *testing.T) {
+	s := testStore(t)
+	got, _, _ := s.BackendSearch(
+		rootSearch("supportedExtension"), anyone)
+	if len(got) != 1 {
+		t.Fatalf("%d entries", len(got))
+	}
+	var values []string
+	for _, a := range got[0].Attributes {
+		if a.Type == "supportedExtension" {
+			values = a.Values
+		}
+	}
+	if len(values) != 1 || values[0] != ldap.OIDWhoAmI {
+		t.Errorf("supportedExtension = %v, want just "+
+			"whoami", values)
+	}
+}

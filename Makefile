@@ -60,6 +60,13 @@ golden-paged:
 		$(GO) test -tags golden -count=1 -v \
 			-run TestGoldenPaged ./internal/golden/
 
+## golden-sasl: compare a SASL EXTERNAL bind against the C
+golden-sasl:
+	@dsn=$$(./scripts/postgres-up.sh) && \
+		OLIVINE_TEST_DSN="$$dsn" \
+		$(GO) test -tags golden -count=1 -v \
+			-run TestGoldenSASLExternal ./internal/golden/
+
 ## postgres-down: remove the throwaway Postgres
 postgres-down:
 	@./scripts/postgres-down.sh

@@ -43,10 +43,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# A CA, a server certificate and a client certificate: the last is
+# the identity a SASL EXTERNAL bind uses, and both sides have to
+# trust the same issuer for that to mean anything.
 openssl req -x509 -newkey ec \
 	-pkeyopt ec_paramgen_curve:P-256 -nodes \
-	-keyout "$dir/key.pem" -out "$dir/cert.pem" \
-	-days 1 -subj /CN=localhost 2>/dev/null
+	-keyout "$dir/ca-key.pem" -out "$dir/ca.pem" \
+	-days 1 -subj "/CN=Olivine Smoke CA" 2>/dev/null
+printf 'subjectAltName=DNS:%s,DNS:localhost\n' "$srv" \
+	> "$dir/san.cnf"
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+	-nodes -keyout "$dir/key.pem" -out "$dir/server.csr" \
+	-subj "/CN=$srv" 2>/dev/null
+openssl x509 -req -in "$dir/server.csr" -CA "$dir/ca.pem" \
+	-CAkey "$dir/ca-key.pem" -out "$dir/cert.pem" -days 1 \
+	-extfile "$dir/san.cnf" 2>/dev/null
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+	-nodes -keyout "$dir/client-key.pem" \
+	-out "$dir/client.csr" \
+	-subj "/C=GB/O=Olivine/CN=olivine-client" 2>/dev/null
+openssl x509 -req -in "$dir/client.csr" -CA "$dir/ca.pem" \
+	-CAkey "$dir/ca-key.pem" -out "$dir/client-cert.pem" \
+	-days 1 2>/dev/null
 chmod 644 "$dir"/*.pem
 
 podman network create "$net" >/dev/null
@@ -71,6 +89,7 @@ podman run -d --name "$srv" --network "$net" \
 	--volume "$dir:/tls:ro" \
 	--env OLIVINE_TLS_CERT=/tls/cert.pem \
 	--env OLIVINE_TLS_KEY=/tls/key.pem \
+	--env OLIVINE_TLS_CLIENT_CA=/tls/ca.pem \
 	--env OLIVINE_DSN="host=${pg} port=5432 user=olivine \
 password=olivine dbname=olivine sslmode=disable" \
 	--env OLIVINE_SUFFIX="dc=example,dc=com" \
@@ -140,6 +159,29 @@ fi
 # A hash must never come back, even to the administrator.
 if printf '%s' "$cfg" | grep -q "ARGON2"; then
 	echo "pod-run: a password hash leaked from cn=config" >&2
+	exit 1
+fi
+
+# The strongest interoperability check here: upstream's own
+# ldapwhoami, binding by certificate with SASL EXTERNAL. Olivine
+# completes EXTERNAL in one round where slapd's Cyrus-backed
+# implementation takes two — RFC 4422 3 allows either, and a
+# conformant client loops until the result is not
+# saslBindInProgress. This proves one really is enough.
+echo "pod-run: SASL EXTERNAL with upstream ldapwhoami"
+who=$(podman run --rm --network "$net" \
+	--volume "$dir:/tls:ro" \
+	--entrypoint /bin/sh "$oracle" -c \
+	"LDAPTLS_REQCERT=allow LDAPTLS_CACERT=/tls/ca.pem \
+	 LDAPTLS_CERT=/tls/client-cert.pem \
+	 LDAPTLS_KEY=/tls/client-key.pem \
+	 /opt/openldap/bin/ldapwhoami \
+		-H ldaps://${srv}:6360 -Y EXTERNAL 2>&1") || true
+
+printf '%s\n' "$who" | sed 's/^/  /'
+if ! printf '%s' "$who" | grep -qi "dn:cn=olivine-client"; then
+	echo "pod-run: EXTERNAL did not bind as the cert" >&2
+	podman logs "$srv" 2>&1 | tail -20 >&2
 	exit 1
 fi
 

@@ -9,8 +9,15 @@ package ldap
 // `by self write by users read by * none` makes it impossible
 // for anyone to bind at all. See internal/acl.
 type Identity struct {
-	// DN is the normalised bound DN, empty when anonymous.
+	// DN is the normalised bound DN, empty when anonymous. This
+	// is what an access check compares.
 	DN string
+	// Pretty is the same DN in the form to show a client, which
+	// is what RFC 4532's whoami returns. slapd answers whoami
+	// from o_dn, the pretty form, not o_ndn — so returning the
+	// normalised DN there would lower-case a client's own name
+	// back at it.
+	Pretty string
 }
 
 // Anonymous reports whether nothing has bound.
