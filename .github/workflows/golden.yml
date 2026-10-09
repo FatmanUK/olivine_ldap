@@ -1,0 +1,83 @@
+# The golden harness: Olivine against OpenLDAP itself.
+#
+# Slow, because it builds slapd from the pinned submodule in a
+# container — around five minutes. Worth every second: it is the
+# only thing here that can tell us we have diverged from the C,
+# and it has caught a dozen divergences that reasoning did not.
+name: Golden
+
+on:
+  push:
+    branches: [mother]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    # The oracle build dominates; the comparisons are seconds.
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          # Required here, and only here: the oracle is built from
+          # the submodule's source.
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go mod download
+
+      - name: Confirm the submodule is the pinned release
+        run: git -C openldap describe --tags --always
+
+      # The runner images ship podman, but saying so out loud beats
+      # a confusing failure three steps later if that changes.
+      - name: Confirm podman is available
+        run: |
+          command -v podman >/dev/null || {
+            sudo apt-get update
+            sudo apt-get install -y podman
+          }
+          podman --version
+
+      # Rootless, as everything here is.
+      - name: Build the oracle
+        run: make golden-build
+
+      # Protocol behaviour, no database needed.
+      - name: Protocol comparison
+        run: make golden
+
+      # The rest need Postgres. make golden-* brings up its own
+      # with podman rather than using a service container, because
+      # the harness also starts containers that must reach it.
+      - name: Searches over a seeded tree
+        run: make golden-data
+
+      - name: Access control
+        run: make golden-acl
+
+      - name: Search limits
+        run: make golden-limits
+
+      - name: Paged results
+        run: make golden-paged
+
+      # The deployment image, queried with upstream's own
+      # ldapsearch from the oracle image.
+      - name: Container smoke test
+        run: make pod-build pod-run
+
+      - name: Tear down
+        if: always()
+        run: make postgres-down

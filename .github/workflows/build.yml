@@ -1,34 +1,52 @@
+# The binary and the image build at all.
+#
+# Separate from Test so a compile break is obvious without reading
+# a test log, and because this needs no database.
 name: Build
 
 on:
   push:
-    branches:
-      - mother
+    branches: [mother]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-        fetch-tags: true
-        submodules: false
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          # The version stamp comes from `git describe`, so the
+          # tags above matter; the submodule does not.
+          submodules: false
 
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: '1.26.0'
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
 
-    - name: Install dependencies
-      run: go mod download
+      - run: go mod download
 
-    - name: Build binary
-      run: make build
+      - name: Build the binary
+        run: make build
 
-    #- name: Build the Olivine container image
-    #  run: make pod-build
+      - name: Confirm it runs
+        run: ./bin/olivined -version
+
+      # A missing certificate is a configuration error, not a
+      # reason to fall back to cleartext, so this must fail.
+      - name: Confirm TLS is mandatory
+        run: |
+          if ./bin/olivined; then
+            echo "started with no certificate" >&2
+            exit 1
+          fi
+
+      - name: Build the container image
+        run: make pod-build

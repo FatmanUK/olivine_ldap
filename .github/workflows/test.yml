@@ -1,15 +1,21 @@
+# The fast suite: everything that needs no container.
+#
+# The golden harness is not here — it builds OpenLDAP from the
+# submodule and takes minutes. It lives in golden.yml.
 name: Test
 
 on:
   push:
-    branches:
-      - mother
+    branches: [mother]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     services:
       postgres:
@@ -18,8 +24,7 @@ jobs:
           POSTGRES_USER: olivine
           POSTGRES_PASSWORD: olivine
           POSTGRES_DB: olivine_test
-        ports:
-          - 5432:5432
+        ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U olivine"
           --health-interval 5s
@@ -27,34 +32,44 @@ jobs:
           --health-retries 20
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-        fetch-tags: true
-        submodules: false
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          # Not needed: the standard schema is embedded, so the
+          # whole of this suite runs without openldap/. Only the
+          # golden harness reads it.
+          submodules: false
 
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: '1.26.0'
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
 
-    - name: Install dependencies
-      run: go mod download
+      - run: go mod download
 
-    - name: Run go vet
-      run: make vet
+      - name: Formatting
+        run: make fmt-check
 
-    - name: Check formatting
-      run: make fmt-check
+      - name: Vet
+        run: make vet
 
-    # Over the whole tree, not just the diff, and not allowed to fail.
-    # The tree meets the rule, so there is nothing to grandfather.
-    - name: Check line width
-      run: make width-check
+      # Over the whole tree, not just the diff. The tree meets the
+      # rule, so there is nothing to grandfather.
+      - name: Line width and function length
+        run: make width-check
 
-    - name: Run tests
-      run: make test
-      env:
-        TEST_DATABASE_URL: >-
-          postgres://olivine:olivine@localhost:5432/olivine_test?sslmode=disable
+      # TEST_DATABASE_URL turns the store tests on. Without it they
+      # skip, which would leave the Postgres service above doing
+      # nothing at all.
+      - name: Tests
+        run: make test
+        env:
+          TEST_DATABASE_URL: >-
+            postgres://olivine:olivine@localhost:5432/olivine_test?sslmode=disable
+
+      - name: Race detector
+        run: make race
+        env:
+          TEST_DATABASE_URL: >-
+            postgres://olivine:olivine@localhost:5432/olivine_test?sslmode=disable
