@@ -8,6 +8,7 @@ import (
 
 	"github.com/jcmturner/gokrb5/v8/keytab"
 	"github.com/jcmturner/gokrb5/v8/messages"
+	"github.com/jcmturner/gokrb5/v8/service"
 	"github.com/jcmturner/gokrb5/v8/types"
 )
 
@@ -21,8 +22,12 @@ var ErrAuth = errors.New("gss: authentication failed")
 // have to agree and every deployment is already tuned to it.
 const maxSkew = 5 * time.Minute
 
-// Acceptor holds the service's long-term keys.
+// Acceptor holds the service's long-term keys and the replay
+// cache that goes with them.
 type Acceptor struct {
+	settings *service.Settings
+	// kt is kept for Realm, which reads the keytab directly:
+	// Settings does not hand it back.
 	kt *keytab.Keytab
 }
 
@@ -40,7 +45,16 @@ func NewAcceptor(path string) (*Acceptor, error) {
 		return nil, fmt.Errorf(
 			"keytab %s holds no key", path)
 	}
-	return &Acceptor{kt: kt}, nil
+	return &Acceptor{settings: service.NewSettings(kt,
+		service.MaxClockSkew(maxSkew),
+		// PAC decoding reads Active Directory's
+		// authorization data out of the ticket. Olivine
+		// has nothing to do with the group memberships it
+		// would yield, and a ticket from AD would
+		// otherwise fail the bind on a PAC this does not
+		// understand.
+		service.DecodePAC(false),
+	), kt: kt}, nil
 }
 
 // Realm is the realm of the first key in the keytab.
@@ -112,12 +126,19 @@ func (a *Acceptor) accept(
 	if err := req.Unmarshal(inner); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrToken, err)
 	}
-	// No client address is checked: the ticket may carry
+	// service.VerifyAPREQ rather than APReq.Verify, which is
+	// the same check *without* the replay cache RFC 4120 3.2.3
+	// requires. An AP-REQ is valid for the whole clock-skew
+	// window, so without the cache a captured one could be
+	// presented twice. TLS makes capturing it hard rather than
+	// impossible, and "hard to exploit" is not the same as
+	// "checked".
+	//
+	// No client address is required: the ticket may carry
 	// addresses, and a server behind a proxy or NAT sees one
 	// that never matches. MIT's own default is addressless
 	// tickets for this reason.
-	ok, err := req.Verify(a.kt, maxSkew,
-		types.HostAddress{}, nil)
+	ok, _, err := service.VerifyAPREQ(&req, a.settings)
 	if err != nil || !ok {
 		return nil, fmt.Errorf("%w: %v", ErrAuth, err)
 	}

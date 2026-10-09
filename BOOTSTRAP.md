@@ -99,7 +99,8 @@ that have aged worst in the C:
   compiles OpenLDAP 2.7.1 from the submodule into a rootless Podman image
   (~5 minutes, ~97 MB); `make golden` drives identical bytes through real
   slapd and through Olivine in-process and diffs the transcripts. It is
-  green, and it has already corrected two mistakes — see §3.1.
+  green, and it has corrected this implementation about a dozen times — see
+  §3.1, where the corrections are recorded rather than discarded.
 - **`internal/schema` parses the real thing.** All 15 `.schema` files in the
   submodule load (1,133 attribute types, 85 object classes), and the parser
   reads all 464 definitions slapd itself emits from `cn=Subschema` — captured
@@ -120,49 +121,51 @@ that have aged worst in the C:
   four scopes, modify and delete, verified against Postgres 17 — `make store`
   starts a throwaway instance and runs them; plain `make test` skips them, so
   the default suite stays hermetic. See `internal/store/README.md`.
-- `make lint`, `make test`, `make race`, `make build` and `make golden` all
-  pass.
-- `make golden` and `make golden-build` exist and fail deliberately,
-  pointing at plan step 5.
+- `make lint`, `make test`, `make race`, `make store`, `make build`,
+  `make pod-run` and all seven golden comparisons pass.
 - Host toolchain: Go 1.26.5, Podman 5.8.3.
 - The module path is settled by the remote:
   `github.com/FatmanUK/openldap_olivine`. Note that the remote repository
   name inverts the local directory name (`olivine_ldap`); the Go module path
   follows the remote.
 
-## 2. Next Three Steps
+## 2. Where the plan stands
 
 The plan is `~/.claude/plans/a-green-stone-in-the-socket.md`, and it is
-authoritative for sequencing. In brief:
+authoritative for sequencing. Every step in it has landed:
 
-1. ~~Reconcile the documentation with reality.~~ Done, `db5fd8e`.
-2. ~~Repository skeleton.~~ Done, `f0bf73e`.
-3. ~~The BER codec, `internal/ber`.~~ Done, `b078080`.
-4. ~~The protocol layer and the TLS listener.~~ Done, `59bd65f` and this
-   commit.
-5. ~~The golden harness, `internal/golden`.~~ Done — this commit.
-6. ~~Schema subsystem.~~ Done — parsing, the registry, checking, and the
-   matching rules and syntax validators.
-7. ~~DN handling and the Postgres store.~~ Done — this commit.
-8. ~~Operations.~~ Bind, search, add, modify, delete, compare, modrdn, the
-   root DSE, paged results and abandon are all done. SASL remains an open
-   question — the last one.
-8. **Operations** — bind, search, add/modify/delete/modrdn, compare,
-   abandon, root DSE. This is what unblocks most of the 113 upstream test
-   scripts as harness corpus.
+| Step | Closed by |
+|---|---|
+| 1. Reconcile the documentation with reality | `db5fd8e` |
+| 2. Repository skeleton | `f0bf73e` |
+| 3. The BER codec, `internal/ber` | `b078080` |
+| 4. The protocol layer and the TLS listener | `59bd65f`, `72b6c47` |
+| 5. The golden harness, `internal/golden` | `1aa12c2` |
+| 6. Schema: parsing, checking, matching rules | `5b536c4`, `7b96eff`, `1f18037` |
+| 7. DN handling and the Postgres store | `61b6023`, `cddb39d` |
+| 8. Operations, modrdn, root DSE, abandon | `ef0ade9`, `1edd80f`, `9ef4dc0` |
+| 9. ACLs, limits, paged results | `71606e0`, `69d32eb`, `f33149e` |
+| 10. Container and `cn=config` | `adb40b5`, `6804d94`, `e0db772` |
+| 11. SASL | `cdca22c`, `acd950a` |
 
-The plan carries the ordering beyond that. Its three open questions are all
-settled: `syncrepl.c` is not ported (Postgres replicates), `cn=config` is
-writable and backed by Postgres with the environment as first-boot defaults,
-and SASL goes as far as EXTERNAL and PLAIN over TLS with GSSAPI costed but
-not implemented.
+Its three open questions are settled: `syncrepl.c` is not ported (Postgres
+replicates); `cn=config` is writable and backed by Postgres, with the
+environment as first-boot defaults; and SASL goes as far as EXTERNAL, PLAIN
+and GSSAPI over TLS.
+
+**So there is no next step in the plan.** What remains is the list of things
+deliberately not done — GSS-SPNEGO, the harder ACL selectors, proxy
+authorization, the obsolete SASL mechanisms — each with its reason in §3.3
+and in the plan's own closing section. Anything picked up from there is a new
+decision rather than a queued one.
 
 ## 3. Project State
 
 ### 3.1 Key Logic
 
-`internal/ber` is the only implemented package. Its departures, and the
-upstream behaviours that are easy to get wrong:
+Every package is implemented. What follows is the catalogue of departures and
+of upstream behaviours that are easy to get wrong — most of them found by the
+harness rather than by reading, and kept here so they are not "fixed" back:
 
 - **The resumable reader is not ported.**
   `libraries/liblber/io.c:473` carries a comment explaining that
@@ -580,6 +583,18 @@ are not "fixed" back by accident.
   PLAIN's. slapd maps one through `authz-regexp` and `authz-to` rules that
   Olivine does not carry; honouring the request without the rules would grant
   more than was asked for.
+- **The replay cache is upstream's own, and wiring it in was not the
+  default.** `APReq.Verify` does every check *except* the replay detection
+  RFC 4120 3.2.3 requires; the cache lives in `service.VerifyAPREQ`, one
+  layer up. An AP-REQ is valid for the whole clock-skew window, so without
+  the cache a captured one could be presented twice — TLS makes capturing it
+  hard rather than impossible, and "hard to exploit" is not "checked". PAC
+  decoding is turned off in the same settings: Olivine has nothing to do with
+  Active Directory's group memberships, and a ticket carrying a PAC this did
+  not understand would otherwise fail the bind. The cache is not separately
+  exercised by the harness — each `ldapwhoami` builds a fresh authenticator,
+  so a replay cannot be driven that way — so what is verified is that the
+  mechanism still works with it in place.
 - **gokrb5 is a client library, and the acceptor side shows it.** It can read
   an AP-REP but not write one, and it ships `NewInitiatorWrapToken` with no
   acceptor counterpart — so `internal/gss` writes the AP-REP itself and
@@ -796,6 +811,9 @@ The newest entry is the commit before HEAD.
 
 | Commit | Summary |
 |---|---|
+| `fb0efce` | Replace the README stub with what the project actually is |
+| `acd950a` | Add SASL GSSAPI, compared against the C with a real KDC |
+| `e0db772` | Make `cn=config` writable, backed by Postgres |
 | `b7f1a1e` | Run the SASL comparison in CI too |
 | `cdca22c` | Add SASL over TLS: EXTERNAL, PLAIN and whoami |
 | `f57466e` | Replace the placeholder CI with workflows that run the real suite |

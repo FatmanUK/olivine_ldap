@@ -46,3 +46,9 @@ One sharp edge: `WrapToken.SetCheckSum` computes the checksum
 but leaves `EC` at zero, and `EC` is the checksum's length on an
 unsealed token. Marshalling without setting it puts the payload
 where the client looks for the checksum.
+
+Another: the AP-REQ is verified through `service.VerifyAPREQ`,
+not `APReq.Verify`. The second does every check *except* the
+replay detection RFC 4120 §3.2.3 requires — the cache lives one
+layer up. An AP-REQ is valid for the whole clock-skew window, so
+without it a captured one could be presented twice.
