@@ -70,14 +70,22 @@ func (s *Store) gssIdentity(
 		}
 	}
 	raw := saslDN(c.Principal, s.gss.Realm())
-	norm, pretty, err := s.normalise(raw)
+	norm, _, err := s.normalise(raw)
 	if err != nil {
 		return Identity{}, ldap.Result{
 			Code:       ldap.InvalidCredentials,
 			Diagnostic: "principal is not a usable DN",
 		}
 	}
-	return Identity{DN: norm, Pretty: pretty},
+	// No pretty form, so whoami reports the normalised DN.
+	// That is slapd's answer too, and for a reason rather than
+	// by accident: slap_sasl_getdn normalises and keeps only
+	// the result (do_norm is 1 at sasl.c:1879), because a
+	// synthetic DN has no entry and no client spelling to
+	// preserve. Observed — a cross-realm bind reported
+	// dn:uid=tester@other.test, lower-cased, where the
+	// principal was tester@OTHER.TEST.
+	return Identity{DN: norm},
 		ldap.Result{Code: ldap.Success}
 }
 
@@ -87,26 +95,37 @@ func (s *Store) gssIdentity(
 // the authentication identity, the realm, the mechanism and the
 // literal "auth":
 //
-//	uid=<user>,cn=<realm>,cn=<mech>,cn=auth
+//	uid=<authcid>,cn=<realm>,cn=<mech>,cn=auth
 //
-// The realm RDN is omitted when the realm is the server's own,
-// which is observed rather than derived: upstream's ldapwhoami
-// binding as tester@OLIVINE.TEST against a slapd in that realm
-// reported dn:uid=tester,cn=gssapi,cn=auth. Cyrus passes the
-// realm through only when it differs, and slapd adds the RDN
-// only when Cyrus passes it.
+// but the realm RDN appears only when Cyrus hands slapd a realm
+// separately, and for GSSAPI it never does. What Cyrus passes as
+// the authcid is the principal with its realm *stripped* when
+// the realm is the default one, and the whole principal when it
+// is not — so the realm ends up inside the uid value rather than
+// beside it:
+//
+//	tester@OLIVINE.TEST  uid=tester,cn=gssapi,cn=auth
+//	tester@OTHER.TEST    uid=tester@other.test,cn=gssapi,cn=auth
+//
+// Both observed against the oracle with a second realm stood up
+// for the purpose, and the second corrected this code: it used
+// to emit cn=OTHER.TEST as an RDN of its own, which is what
+// reading slap_sasl_getdn alone suggests. Reading the C told the
+// truth about slapd and not about Cyrus, and the DN is what the
+// two produce together.
 //
 // Nothing needs to exist at this DN. It is a name for access
 // control to match — `by dn.exact="uid=...,cn=auth"` — exactly
 // as rootdn is a name with no entry.
 func saslDN(principal, ownRealm string) string {
 	user, realm := splitPrincipal(principal)
-	out := "uid=" + escapeRDN(user)
 	if realm != "" && !strings.EqualFold(realm, ownRealm) {
-		out += ",cn=" + escapeRDN(realm)
+		// Not the server's own realm, so the identity is
+		// ambiguous without it: keep the principal whole.
+		user = principal
 	}
-	return out + ",cn=" + strings.ToLower(MechGSSAPI) +
-		",cn=auth"
+	return "uid=" + escapeRDN(user) + ",cn=" +
+		strings.ToLower(MechGSSAPI) + ",cn=auth"
 }
 
 // splitPrincipal separates user@REALM at the last @.

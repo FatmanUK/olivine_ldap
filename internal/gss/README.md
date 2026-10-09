@@ -23,6 +23,27 @@ have:
 | 2 | the mechanism name, no credentials | Wrap token: security-layer bitmask and maximum buffer |
 | 3 | Wrap token: the layer it chose | success, no credentials |
 
+## The DN a bind produces
+
+| principal | DN |
+|---|---|
+| `tester@OLIVINE.TEST` (the service's own realm) | `uid=tester,cn=gssapi,cn=auth` |
+| `tester@OTHER.TEST` (crossed a realm) | `uid=tester@other.test,cn=gssapi,cn=auth` |
+
+The realm never becomes an RDN of its own, which is *not* what
+`slap_sasl_getdn` looks like it does — it composes
+`uid=<authcid>,cn=<realm>,cn=<mech>,cn=auth`, but that realm RDN
+appears only when Cyrus hands slapd a realm separately, and for
+GSSAPI it never does. The cross-realm row was wrong here until a
+second realm was added to the harness. Reading the C told the
+truth about slapd and not about Cyrus; the DN is what the two
+produce together.
+
+Neither form has a pretty spelling: `slap_sasl_getdn` normalises
+and keeps only the result, because a synthetic DN has no entry
+behind it. So whoami reports the lower-cased form, and
+`Identity.Pretty` is left empty.
+
 ## Only no-security-layer is offered
 
 slapd offers integrity and confidentiality too, and MIT takes

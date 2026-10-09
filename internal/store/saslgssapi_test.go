@@ -15,11 +15,15 @@ func TestSASLDN(t *testing.T) {
 	cases := []struct{ principal, want string }{
 		{"tester@OLIVINE.TEST",
 			"uid=tester,cn=gssapi,cn=auth"},
-		// A realm that is not the server's own is named, so
-		// a cross-realm identity is distinguishable.
+		// A realm that is not the server's own stays inside
+		// the uid value rather than becoming an RDN of its
+		// own. Observed: the oracle answered
+		// dn:uid=tester@other.test,cn=gssapi,cn=auth for a
+		// cross-realm bind, where reading slap_sasl_getdn
+		// alone had suggested cn=OTHER.TEST.
 		{"tester@OTHER.TEST",
-			"uid=tester," +
-				"cn=OTHER.TEST,cn=gssapi,cn=auth"},
+			"uid=tester@OTHER.TEST," +
+				"cn=gssapi,cn=auth"},
 		// Case-insensitively: a realm is written upper-case
 		// by convention, not by rule.
 		{"tester@olivine.test",

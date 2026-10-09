@@ -88,9 +88,12 @@ that have aged worst in the C:
 - **whoami (RFC 4532) is implemented**, which is what makes `ldapwhoami` work
   at all and the quickest way to see what a bind actually did.
 - **GSSAPI works**, over `gokrb5` — pure Go, no libkrb5, so the scratch image
-  is unchanged. `make golden-gssapi` stands up a KDC, points upstream's own
-  `ldapwhoami -Y GSSAPI` at slapd and at Olivine in turn, and compares the
-  DN each reports. Both answer `dn:uid=tester,cn=gssapi,cn=auth`.
+  is unchanged. `make golden-gssapi` stands up a KDC with **two realms**,
+  points upstream's own `ldapwhoami -Y GSSAPI` at slapd and at Olivine in
+  turn, and compares the DN each reports — for a principal in the server's
+  own realm and for one that has crossed a realm boundary. Both servers
+  agree on both. The second realm earned its keep immediately: it found two
+  defects, in §3.3.
 - Not implemented: the ACL features listed in §3.3.
 - StartTLS is refused with `operationsError`, critical unknown controls draw
   `unavailableCriticalExtension`, and malformed input draws a notice of
@@ -471,6 +474,20 @@ harness rather than by reading, and kept here so they are not "fixed" back:
   (`bconfig.c:6186-6200`) and emits the index on the way out. `olcAccess`
   needs it: the first matching clause decides, so the order *is* the policy.
 - **A deletion of a value that is not present is `noSuchAttribute`.**
+- **SCRAM, DIGEST-MD5 and CRAM-MD5 do not work against a stock slapd.** The
+  root DSE advertises five SCRAM variants, and a bind with a correct
+  `userPassword` answers `invalidCredentials` with "SASL(-13): user not
+  found: no secret in database" — Cyrus wants the secret in its own
+  database, and `userPassword` is not it. Verified against the oracle, with
+  a simple bind for the same user as the control. The same shape as the
+  PLAIN finding: slapd advertises what Cyrus *can* do, not what is
+  configured to work.
+- **`authPassword` is compiled out of a default build.** RFC 3112's
+  attribute, and where RFC 5803 would put a SCRAM secret, sits behind
+  `#ifdef SLAPD_AUTHPASSWD` in `schema_prep.c:974-993`. It is absent from
+  slapd's live `cn=Subschema`, so it is correctly absent from Olivine's
+  derived schema — and worth knowing before concluding the derivation has a
+  gap.
 - **A SASL GSSAPI bind is three LDAP round trips, and the middle request
   carries no credentials field.** Captured from upstream's own `ldapwhoami`
   through a logging proxy: request one is the initial context token with the
@@ -566,14 +583,33 @@ are not "fixed" back by accident.
   authenticator's subkey when the client sent one, the ticket session key
   otherwise — which is one fewer secret to generate. The visible consequence
   is that the client's Wrap tokens carry no AcceptorSubkey flag.
-- **The derived DN omits the realm when it is the server's own.** slapd
-  composes `uid=<user>,cn=<realm>,cn=<mech>,cn=auth` in
-  `slap_sasl_getdn` (`sasl.c:1957-2010`), but the realm RDN only appears
-  when Cyrus passes a realm through, and it does not when the realm is the
-  default. Observed: `tester@OLIVINE.TEST` against a slapd in that realm
-  gives `dn:uid=tester,cn=gssapi,cn=auth`. Olivine matches, and names the
-  realm when it differs — a case the single-realm harness cannot compare, so
-  it is reasoned rather than verified and marked as such.
+- **The realm never becomes an RDN of its own, and reading the C said
+  otherwise.** `slap_sasl_getdn` (`sasl.c:1957-2010`) composes
+  `uid=<authcid>,cn=<realm>,cn=<mech>,cn=auth`, so the obvious reading is
+  that a cross-realm identity gets a `cn=<REALM>` RDN. It does not: that RDN
+  appears only when Cyrus hands slapd a realm *separately*, and for GSSAPI it
+  never does. What Cyrus passes as the authcid is the principal with its
+  realm stripped when the realm is the default one and the whole principal
+  when it is not, so the realm ends up inside the uid value:
+
+  | principal | DN |
+  |---|---|
+  | `tester@OLIVINE.TEST` | `uid=tester,cn=gssapi,cn=auth` |
+  | `tester@OTHER.TEST` | `uid=tester@other.test,cn=gssapi,cn=auth` |
+
+  Both compared against the oracle with a second realm stood up for the
+  purpose. The cross-realm row was shipped wrong first, as
+  `uid=tester,cn=OTHER.TEST,...`, on the strength of reading
+  `slap_sasl_getdn` alone — which told the truth about slapd and not about
+  Cyrus, and the DN is what the two produce together. The second realm is
+  why it is now right.
+- **A SASL-derived DN has no pretty form.** `slap_sasl_getdn` normalises and
+  keeps only the result (`do_norm` is 1 at `sasl.c:1879`), because a
+  synthetic DN has no entry behind it and no client spelling to preserve —
+  so whoami reports the normalised, lower-cased form. Olivine leaves
+  `Identity.Pretty` empty for these, and whoami falls back to the normalised
+  DN. Found by the cross-realm comparison: the DNs matched and the *case* did
+  not.
 - **GSSAPI is advertised only when a keytab is configured.** slapd advertises
   it whenever Cyrus has the plugin, keytab or not, so a client can select a
   mechanism that cannot possibly succeed. `OLIVINE_KRB5_KEYTAB` is what turns
@@ -811,6 +847,7 @@ The newest entry is the commit before HEAD.
 
 | Commit | Summary |
 |---|---|
+| `ff05371` | Add the GSSAPI replay cache, and unrot three doc sections |
 | `fb0efce` | Replace the README stub with what the project actually is |
 | `acd950a` | Add SASL GSSAPI, compared against the C with a real KDC |
 | `e0db772` | Make `cn=config` writable, backed by Postgres |
@@ -896,12 +933,27 @@ principal and keytab for each server, and compares the DN each reports.
 Olivine never contacts the KDC: an acceptor decrypts the ticket with its own
 keytab, which is also why its scratch image needs no `krb5.conf`.
 
-One trap worth recording, because its error message points at the wrong
-thing: podman's DNS answers with its own search domain appended, so a client
-canonicalising the host asks for `ldap/<host>.dns.podman` and then derives a
-realm named after it. The failure reads `Server krbtgt/DNS.PODMAN@... not
-found in Kerberos database`, which looks like a KDC fault. `-N`
-(`SASL_NOCANON`) is the fix, and the harness passes it. `make pod-run` is the end-to-end check: it
+**Two realms**, from one `krb5kdc` serving both, with a shared
+`krbtgt/OLIVINE.TEST@OTHER.TEST` as the trust. The second realm exists
+because the cross-realm identity was the one thing GSSAPI asserted without
+comparing, and it found two defects in the first run — see §3.3. Each bind
+destroys the ticket cache first: the point of the case is *which* principal
+is presented, and a leftover ticket would quietly compare the same thing
+twice.
+
+Two traps worth recording, because both produce an error that points at the
+wrong thing:
+
+- podman's DNS answers with its own search domain appended, so a client
+  canonicalising the host asks for `ldap/<host>.dns.podman` and then derives
+  a realm named after it. The failure reads `Server krbtgt/DNS.PODMAN@... not
+  found in Kerberos database`, which looks like a KDC fault. `-N`
+  (`SASL_NOCANON`) is the fix, and the harness passes it.
+- **MIT's profile parser wants braces on their own lines.** `REALM = { kdc =
+  host }` on one line is not read, and nothing complains: the realm simply
+  ends up with no KDC, and `kinit` says `Cannot find KDC for realm`, which
+  reads like a missing realm rather than a syntax error. Cost half an hour
+  when the second realm went in. `make pod-run` is the end-to-end check: it
 stands up the scratch image against a throwaway Postgres and drives it with
 upstream's own `ldapsearch`, `ldapmodify` and `ldapwhoami` — including a
 write to `cn=config` whose effect is then read back.

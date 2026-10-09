@@ -25,6 +25,11 @@ kdc=olivine-gss-kdc
 srv=olivine-gss-srv
 pg=olivine-gss-pg
 realm=OLIVINE.TEST
+# A second realm, so the cross-realm identity is compared rather
+# than reasoned about. It was worth standing up: the DN slapd
+# produces for a cross-realm bind is not the one reading
+# slap_sasl_getdn suggests, and this is what caught that.
+other=OTHER.TEST
 # Fully-qualified names in a domain the KDC maps to the realm.
 # A bare container name sends the client looking for a realm
 # named after podman's own search domain.
@@ -80,8 +85,8 @@ podman run -d --name "$kdc" --network "$net" \
 	--hostname "$kdcHost" \
 	--volume "$dir:/shared" \
 	--entrypoint /bin/bash "$oracle" \
-	/shared/kdc.sh "$realm" "$kdcHost" "$srvHost" \
-	>/dev/null
+	/shared/kdc.sh "$realm" "$other" "$kdcHost" \
+	"$srvHost" >/dev/null
 
 for _ in $(seq 1 120); do
 	[ -f "$dir/ready" ] && break
@@ -110,23 +115,33 @@ password=olivine dbname=olivine sslmode=disable" \
 
 echo "gssapi: binding to each server with upstream ldapwhoami"
 run_client() {
-	podman exec "$kdc" /bin/bash /shared/client.sh "$1" \
-		2>&1 || true
+	podman exec "$kdc" /bin/bash /shared/client.sh \
+		"$1" "$2" 2>&1 || true
 }
-want=$(run_client "ldap://${kdcHost}:10389")
-got=$(run_client "ldaps://${srvHost}:6360")
 
-printf 'oracle:  %s\n' "$want"
-printf 'olivine: %s\n' "$got"
+fail=0
+for principal in "tester@${realm}" "tester@${other}"; do
+	want=$(run_client "ldap://${kdcHost}:10389" \
+		"$principal")
+	got=$(run_client "ldaps://${srvHost}:6360" \
+		"$principal")
+	printf '  %s\n' "$principal"
+	printf '    oracle:  %s\n' "$want"
+	printf '    olivine: %s\n' "$got"
+	if ! printf '%s' "$want" | grep -q '^dn:'; then
+		echo "gssapi: the oracle refused $principal" >&2
+		podman logs "$kdc" 2>&1 | tail -30 >&2
+		fail=1
+		continue
+	fi
+	if [ "$want" != "$got" ]; then
+		echo "gssapi: the two disagree for $principal" >&2
+		podman logs "$srv" 2>&1 | tail -30 >&2
+		fail=1
+	fi
+done
 
-if ! printf '%s' "$want" | grep -q '^dn:'; then
-	echo "gssapi: the oracle did not answer a GSSAPI bind" >&2
-	podman logs "$kdc" 2>&1 | tail -30 >&2
+if [ "$fail" -ne 0 ]; then
 	exit 1
 fi
-if [ "$want" != "$got" ]; then
-	echo "gssapi: the two servers disagree" >&2
-	podman logs "$srv" 2>&1 | tail -30 >&2
-	exit 1
-fi
-echo "gssapi: ok — both answered $got"
+echo "gssapi: ok — both realms agree"

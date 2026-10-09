@@ -110,7 +110,7 @@ make golden-acl      # nine access policies
 make golden-limits   # size and time limits
 make golden-paged    # paged results, four page sizes
 make golden-sasl     # a SASL EXTERNAL bind
-make golden-gssapi   # a SASL GSSAPI bind, against a real KDC
+make golden-gssapi   # a SASL GSSAPI bind, two realms, a real KDC
 ```
 
 It was built early, before the schema and the operations, so that
@@ -127,7 +127,11 @@ corrections:
   `unwillingToPerform`;
 - a malformed `olcAccess` value answers `other`, because `aclparse.c`
   never sets `reply.err` and the failure falls through at
-  `bconfig.c:6034`.
+  `bconfig.c:6034`;
+- a cross-realm GSSAPI identity keeps its realm *inside* the `uid` value —
+  `uid=tester@other.test` — where `slap_sasl_getdn` reads as though it
+  would get a `cn=OTHER.TEST` RDN of its own. Reading the C told the truth
+  about slapd and not about Cyrus.
 
 Where the protocol leaves something open — which entries a truncated
 search returns, how a paged cookie is spelled, how many rounds a SASL

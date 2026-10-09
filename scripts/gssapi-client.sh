@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Bind to one server with upstream's ldapwhoami over GSSAPI and
-# print what it says the identity is.
+# Bind to one server with upstream's ldapwhoami over GSSAPI, as
+# one principal, and print what the server says the identity is.
 #
 # -O maxssf=0 asks for no SASL security layer. Olivine offers
 # only that, because it is TLS-only and a second layer inside
@@ -10,8 +10,14 @@ set -euo pipefail
 
 . /data/env.sh
 uri=$1
+principal=$2
 
-echo testpw | kinit tester >/dev/null 2>&1
+# A fresh cache per bind: the point of the cross-realm case is
+# which principal is presented, so a leftover ticket for the
+# other one would quietly compare the same thing twice.
+kdestroy >/dev/null 2>&1 || true
+echo testpw | kinit "$principal" >/dev/null 2>&1
+
 # -N turns off SASL host-name canonicalization. Nothing to do
 # with the protocol: podman's DNS answers with its own search
 # domain appended, so the client would ask for a ticket for

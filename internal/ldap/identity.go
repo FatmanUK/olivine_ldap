@@ -17,6 +17,12 @@ type Identity struct {
 	// from o_dn, the pretty form, not o_ndn — so returning the
 	// normalised DN there would lower-case a client's own name
 	// back at it.
+	//
+	// Empty for an identity that has no client spelling to
+	// preserve: a SASL-derived DN is synthesised from a
+	// certificate subject or a Kerberos principal and has no
+	// entry behind it, and slapd reports the normalised form
+	// for those. whoami falls back to DN, which is that form.
 	Pretty string
 }
 
