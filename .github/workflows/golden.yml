@@ -73,6 +73,11 @@ jobs:
       - name: Paged results
         run: make golden-paged
 
+      # A SASL EXTERNAL bind, with one client certificate the
+      # oracle and Olivine both trust.
+      - name: SASL EXTERNAL
+        run: make golden-sasl
+
       # The deployment image, queried with upstream's own
       # ldapsearch from the oracle image.
       - name: Container smoke test
