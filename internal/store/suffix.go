@@ -21,20 +21,25 @@ var ErrOutOfScope = errors.New(
 //
 // A DN under no suffix does not belong here at all.
 //
-// Configuration proper is plan step 10; until then a caller
-// declares the suffixes directly.
+// A caller may declare one directly, which is what the tests do.
+// That is an in-memory override and does not persist: a write to
+// cn=config republishes the whole configuration from the
+// database, and a suffix declared only here would be lost at that
+// point. Bootstrap is how a server declares them for real.
 func (s *Store) AddSuffix(rawDN string) error {
 	norm, _, err := s.normalise(rawDN)
 	if err != nil {
 		return err
 	}
-	s.suffixes = append(s.suffixes, norm)
-	return nil
+	return s.mutate(func(c *settings) error {
+		c.suffixes = append(c.suffixes, norm)
+		return nil
+	})
 }
 
 // isSuffix reports whether norm is exactly a suffix.
 func (s *Store) isSuffix(norm string) bool {
-	for _, suf := range s.suffixes {
+	for _, suf := range s.conf().suffixes {
 		if norm == suf {
 			return true
 		}
@@ -47,7 +52,7 @@ func (s *Store) isSuffix(norm string) bool {
 // The separator is required so that dc=examplecorp,dc=com is
 // not treated as living under dc=example,dc=com.
 func (s *Store) inScope(norm string) bool {
-	for _, suf := range s.suffixes {
+	for _, suf := range s.conf().suffixes {
 		if norm == suf ||
 			strings.HasSuffix(norm, ","+suf) {
 			return true
@@ -58,7 +63,8 @@ func (s *Store) inScope(norm string) bool {
 
 // Suffixes returns the declared naming contexts.
 func (s *Store) Suffixes() []string {
-	out := make([]string, len(s.suffixes))
-	copy(out, s.suffixes)
+	have := s.conf().suffixes
+	out := make([]string, len(have))
+	copy(out, have)
 	return out
 }

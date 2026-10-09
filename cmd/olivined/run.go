@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/FatmanUK/openldap_olivine/internal/server"
 	"github.com/FatmanUK/openldap_olivine/internal/store"
@@ -41,6 +42,11 @@ type config struct {
 	// slapd's own defaults.
 	sizeLimit int32
 	timeLimit int32
+	// configRefresh is how often the running configuration is
+	// re-read from the database, so a change made through one
+	// replica reaches the others. Zero disables the refresh,
+	// which only makes sense for a single instance.
+	configRefresh time.Duration
 	// clientCA, when set, makes the server request a client
 	// certificate and verify it against these authorities. A
 	// client that presents none is still served, as slapd's
@@ -72,6 +78,8 @@ func configFromEnv() (config, error) {
 		sizeLimit: envInt("OLIVINE_SIZELIMIT"),
 		timeLimit: envInt("OLIVINE_TIMELIMIT"),
 		clientCA:  os.Getenv("OLIVINE_TLS_CLIENT_CA"),
+		configRefresh: refreshInterval(
+			"OLIVINE_CONFIG_REFRESH"),
 	}
 	if c.addr == "" {
 		c.addr = defaultAddr
@@ -146,6 +154,32 @@ func envInt(name string) int32 {
 		return 0
 	}
 	return int32(n)
+}
+
+// defaultRefresh is how often a replica re-reads cn=config.
+//
+// Thirty seconds is a compromise with no upstream to copy: slapd
+// has no equivalent, because its configuration is local to the
+// process. Short enough that an operator does not wonder whether
+// a change took, long enough that a dozen replicas are not a
+// load on the database by themselves.
+const defaultRefresh = 30 * time.Second
+
+// refreshInterval reads the refresh period in seconds.
+//
+// An explicit zero disables it; anything unreadable falls back to
+// the default, for the same reason envInt does.
+func refreshInterval(name string) time.Duration {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return defaultRefresh
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		log.Printf("olivined: ignoring %s=%q", name, raw)
+		return defaultRefresh
+	}
+	return time.Duration(n) * time.Second
 }
 
 // loadClientCAs reads the authorities that may issue client

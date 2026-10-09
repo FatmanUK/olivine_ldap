@@ -93,3 +93,29 @@ func parseRule(directive string) (Rule, error) {
 	}
 	return Rule{What: what, By: bys}, nil
 }
+
+// Split returns one string per access directive, with the
+// leading `access` keyword removed.
+//
+// That is the form olcAccess holds: slapd.conf writes `access to
+// * by * read` and cn=config stores `to * by * read`, the same
+// directive with the keyword implied by the attribute. Splitting
+// here rather than in the caller keeps one notion of where a
+// directive ends — the continuation-line rule is not obvious and
+// is not worth having twice.
+func Split(text string) ([]string, error) {
+	var out []string
+	for _, directive := range splitDirectives(text) {
+		if _, err := parseRule(directive); err != nil {
+			return nil, err
+		}
+		// Trimmed textually, not re-joined from tokens: a
+		// quoted value may hold spaces, and rebuilding the
+		// directive from its fields would lose the quotes
+		// that made it one value.
+		bare := strings.TrimSpace(directive)
+		_, rest, _ := strings.Cut(bare, " ")
+		out = append(out, strings.TrimSpace(rest))
+	}
+	return out, nil
+}

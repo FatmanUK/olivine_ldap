@@ -7,7 +7,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/FatmanUK/openldap_olivine/internal/acl"
 	"github.com/FatmanUK/openldap_olivine/internal/dn"
 	"github.com/FatmanUK/openldap_olivine/internal/schema"
 )
@@ -22,20 +21,11 @@ var (
 type Store struct {
 	db     *gorm.DB
 	schema *schema.Registry
-	// suffixes are the naming contexts this store holds. See
-	// AddSuffix.
-	suffixes []string
-	// policy is the access policy, nil for slapd's default of
-	// read on everything.
-	policy *acl.Policy
-	// rootDN and rootPassword are the administrative identity,
-	// which exists outside the database. See SetRootDN.
-	rootDN       string
-	rootPretty   string
-	rootPassword string
-	// limits are the administrative search limits. The zero
-	// value means DefaultLimits.
-	limits Limits
+	// configState holds the configuration in force — the
+	// suffixes, the access policy, the root identity and the
+	// limits. It lives behind an atomic pointer because
+	// cn=config is writable: see settings.
+	configState
 }
 
 // New returns a Store over an open GORM connection.
@@ -58,7 +48,8 @@ func New(
 // server brings the schema up to date on start and is expected
 // to be killed rather than shut down.
 func (s *Store) Migrate() error {
-	return s.db.AutoMigrate(&Entry{}, &Value{})
+	return s.db.AutoMigrate(
+		&Entry{}, &Value{}, &Setting{})
 }
 
 // revDN reverses a normalised DN's RDNs, so that "is under"

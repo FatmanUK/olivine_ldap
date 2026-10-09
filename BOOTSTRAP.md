@@ -72,9 +72,12 @@ that have aged worst in the C:
 - **Paged results work**, compared against slapd by `make golden-paged` across
   four page sizes. It is the one control Olivine implements, and the only one
   the root DSE advertises.
-- **`cn=config` is a read-only projection of the environment**, visible only
-  to the administrator, verified through the container with upstream's own
-  `ldapsearch`.
+- **`cn=config` is writable and lives in Postgres**, visible only to the
+  administrator. The settings a running server can adopt — the suffixes, the
+  access policy, the root identity and the limits — are stored in the
+  `config_settings` table; the environment supplies *defaults for first
+  boot*. A change made through one replica reaches the others, which is what
+  makes a configuration change something other than a lockstep redeploy.
 - **Abandon works, and operations run concurrently per connection.** A
   spawned operation that is abandoned sends nothing at all.
 - **SASL works over TLS**, which is the normal configuration and not a
@@ -144,10 +147,11 @@ authoritative for sequencing. In brief:
    abandon, root DSE. This is what unblocks most of the 113 upstream test
    scripts as harness corpus.
 
-The plan carries the ordering beyond that, and three open questions —
-whether `syncrepl.c` is ported at all, whether `cn=config` becomes a
-read-only projection of the environment, and how far SASL goes beyond simple
-bind over TLS — each tagged with the step it blocks.
+The plan carries the ordering beyond that. Its three open questions are all
+settled: `syncrepl.c` is not ported (Postgres replicates), `cn=config` is
+writable and backed by Postgres with the environment as first-boot defaults,
+and SASL goes as far as EXTERNAL and PLAIN over TLS with GSSAPI costed but
+not implemented.
 
 ## 3. Project State
 
@@ -434,11 +438,42 @@ upstream behaviours that are easy to get wrong:
 - **The per-connection pending-operation cap also doubles after bind**: 100
   unauthenticated, 1000 authenticated (`slap.h:145-146`), the same pattern as
   `sockbuf_max_incoming`.
+- **`olcSuffix` is modifiable on a real database**, and refused only on the
+  frontend, monitor and config databases (`bconfig.c`, `config_suffix`). A
+  writable suffix is upstream's behaviour, not an invention.
+- **A modify of `objectClass` under `cn=config` is refused outright** —
+  "objectclass modification disallowed", `bconfig.c:6064-6066` — because
+  slapd compares the whole set before and after and will not accept a change
+  to either.
+- **A malformed `olcAccess` value answers `other`, not
+  `unwillingToPerform`.** `aclparse.c` never sets `reply.err`, so
+  `config_parse_add`'s failure falls through to `LDAP_OTHER` at
+  `bconfig.c:6034`. Guessing `invalidSyntax` here would have been wrong, and
+  so would guessing `unwillingToPerform` from the function's initial `rc`.
+- **A second value for a single-valued setting is `constraintViolation`**,
+  with the diagnostic "`<type>`: multiple values provided"
+  (`modify.c:638-648`). That is a *different* code from the one an entry's
+  schema check gives for the same mistake, which also answers
+  `constraintViolation` but with "attribute '%s' cannot have multiple values"
+  (`schema_check.c:103-116`).
+- **An attribute `cn=config` has no table entry for is
+  `unwillingToPerform`**, which is simply what `config_modify_internal`
+  initialises `rc` to (`bconfig.c:6044`) and falls out with.
+- **`{n}` prefixes are an ordering mechanism, not decoration.** slapd reads a
+  leading `{n}` on an added value to place it within an ordered attribute
+  (`bconfig.c:6186-6200`) and emits the index on the way out. `olcAccess`
+  needs it: the first matching clause decides, so the order *is* the policy.
+- **A deletion of a value that is not present is `noSuchAttribute`.**
+- **Configuration DNs must be compared case-insensitively.**
+  `olcDatabase={1}postgres` is mixed case, and comparing a lower-cased search
+  base against the entry's own spelling silently found nothing — so a
+  base-scope search or modify of the database entry answered `noSuchObject`.
+  Found by the first write test that aimed at it.
 
 ### 3.2 Architecture
 
 Package layout, mirroring the C's separation of concerns rather than its file
-layout. All of these exist as `doc.go` only; the implementations do not.
+layout. All of these are implemented.
 
 | Go package | Ported from |
 |---|---|
@@ -451,10 +486,19 @@ layout. All of these exist as `doc.go` only; the implementations do not.
 | `internal/golden` | new — the oracle |
 | `cmd/olivined` | `servers/slapd` (the daemon entry point) |
 
-Configuration is read from the environment, per the 12-factor departure:
-`OLIVINE_LISTEN` (default `:636`, the ldaps port — there is no 389
-listener), `OLIVINE_TLS_CERT` and `OLIVINE_TLS_KEY`. A missing certificate
-is a configuration error, not a reason to fall back to cleartext.
+Configuration is split in two, which is the shape the 12-factor departure
+actually wants:
+
+| | Where | Why |
+|---|---|---|
+| `OLIVINE_DSN`, `OLIVINE_TLS_CERT`/`_KEY`/`_CLIENT_CA`, `OLIVINE_LISTEN`, `OLIVINE_SCHEMA` | the environment, every start | needed *before* the database is reachable, or before it can be parsed |
+| suffixes, access policy, root identity, search limits | `config_settings` in Postgres, projected as `cn=config` | identical across replicas, so shared state rather than per-process config |
+
+`OLIVINE_LISTEN` defaults to `:636`, the ldaps port — there is no 389
+listener. A missing certificate is a configuration error, not a reason to
+fall back to cleartext. The environment variables for the second row are
+read only when the database holds nothing for that setting, so a change made
+over LDAP is not undone by the next deploy.
 
 The operation dispatch to match is `servers/slapd/connection.c:1080-1089`.
 
@@ -539,6 +583,62 @@ are not "fixed" back by accident.
   would fail in confusing ways. Better to fail at "command not found".
 - **New code says TLS, not SSL** — it's been TLS for over 20 years. Time to
   drop the SSL nomenclature (except where it would cause a problem).
+- **`cn=config` is writable, and backed by Postgres rather than the
+  environment.** This reverses an earlier decision in this repository, and
+  the reversal is the point: `6804d94` made `cn=config` a read-only
+  projection on the reasoning that the 12-factor departure made the
+  environment the single authority. That misread 12-factor, which calls
+  config what *varies between deploys*. A DSN and a certificate path vary;
+  the suffixes, the access policy and the limits do not — they are identical
+  across every replica, which makes them shared state, and the shared state
+  store was already here and already replicated. The read-only version meant
+  changing a suffix was a lockstep redeploy of every replica, which is the
+  opposite of what the departure was for.
+
+  So the split is by *when a value is needed*, not by what kind of value it
+  is: anything required before the database can be reached stays
+  environmental because there is nowhere else it could come from, and
+  everything else lives in `config_settings`. The environment's values for
+  the second group are defaults for first boot — a setting the database
+  already holds wins, or a change made over LDAP would be undone by the next
+  deploy.
+- **Replicas poll rather than listen.** `OLIVINE_CONFIG_REFRESH` seconds
+  (default 30) between re-reads. Postgres has `LISTEN`/`NOTIFY`, but a
+  replica that missed a notification while reconnecting would stay wrong
+  indefinitely, and a poll cannot. A failed poll keeps the configuration in
+  force and logs: the database being unreachable already fails every
+  operation that needs it, and publishing an empty configuration — or dying
+  — because one read failed would turn a transient fault into an outage.
+- **The settings are published behind an atomic pointer, not held in
+  fields.** Every operation reads the suffixes, the policy, the root identity
+  and the limits, and those reads happen on connection goroutines while a
+  write to `cn=config` happens on another. A field written in place is a data
+  race; a lock taken per read is on the path of every search. A change builds
+  a whole new immutable snapshot and swaps the pointer, so a reader holds one
+  consistent generation for the length of its operation and never blocks.
+- **`olcRootPW` is hashed on the way in, which slapd does not do.** Upstream
+  stores it exactly as given, cleartext included, and compares with
+  `lutil_passwd`. Olivine hashes a bare value with Argon2id unless it already
+  carries a `{SCHEME}` prefix, so the table never holds a recoverable
+  credential. Visible only to something reading `olcRootPW` back, and nothing
+  can: the projection withholds it, hashed or not.
+- **`olcRootDN` cannot be deleted.** `cn=config` answers to the
+  administrator and to nobody else, and the environment's defaults apply only
+  to a setting that is *absent* at boot — so dropping it would make the
+  configuration unreachable over LDAP permanently. slapd permits the
+  equivalent because its `cn=config` has a `rootdn` of its own to fall back
+  on. Olivine has one identity and refuses to drop it, with
+  `unwillingToPerform` saying why.
+- **Configuration entries cannot be added or removed**, only modified. There
+  is one database, so the tree has a fixed shape — `cn=config` and
+  `olcDatabase={1}postgres,cn=config` — and nothing a client could usefully
+  create. slapd numbers its databases because it can hold several; the index
+  is kept so a client walking the tree sees the shape it expects.
+- **The in-memory setters are test helpers now.** `AddSuffix`, `SetPolicy`,
+  `SetRootDN` and `SetLimits` do not persist, and a subsequent write to
+  `cn=config` republishes the whole configuration from the database and
+  discards them. `Bootstrap` is how a server declares its configuration. The
+  doc comments say so, because the failure mode is silent.
 
 ### 3.4 Other
 
@@ -629,6 +729,27 @@ The newest entry is the commit before HEAD.
 
 | Commit | Summary |
 |---|---|
+| `b7f1a1e` | Run the SASL comparison in CI too |
+| `cdca22c` | Add SASL over TLS: EXTERNAL, PLAIN and whoami |
+| `f57466e` | Replace the placeholder CI with workflows that run the real suite |
+| `9ef4dc0` | Make abandon mean something: operations now run concurrently |
+| `6804d94` | Project `cn=config` read-only, closing step 10 — superseded |
+| `f33149e` | Add paged results, closing step 9 |
+| `adb40b5` | Add the deployment container, and fix two bugs it found |
+| `69d32eb` | Add search limits, compared against slapd on five cases |
+| `1edd80f` | Add modrdn, the root DSE and rootdn; embed the standard schema |
+| `5a1b022` | Add a couple of missing pieces |
+| `71606e0` | Add `internal/acl`: matched against slapd on nine policies |
+| `1f18037` | Add matching rules and syntax validation, closing step 6 |
+| `7b96eff` | Add schema checking, with slapd's exact codes |
+| `ef0ade9` | Wire the operations: Olivine answers searches like slapd |
+| `cddb39d` | Add `internal/store`: entries in Postgres |
+| `61b6023` | Add `internal/dn`, verified against slapd's own `dnNormalize` |
+| `5b536c4` | Add `internal/schema`: parse the definitions |
+| `1aa12c2` | Add `internal/golden`: the oracle runs, and it was right twice |
+| `72b6c47` | Add `internal/server`: it listens, dispatches and answers |
+| `59bd65f` | Add `internal/ldap`: message envelope, result codes, controls |
+| `c6217fc` | Record the BER findings in BOOTSTRAP.md |
 | `b078080` | Add `internal/ber`, the BER codec everything rests on |
 | `81abfd1` | Settle replication: syncrepl not ported, Postgres replicates |
 | `f0bf73e` | Stand up the repository skeleton |
@@ -648,22 +769,37 @@ executions in total with no panics. A malformed-length panic in the decoder
 is a remote crash later, and under crash-only architecture a panic is a
 restart, so the fuzzers are run rather than merely compiled.
 
-`encoding/asn1` serves as an independent oracle for the subset where BER and
-DER agree, standing in until the golden harness lands at step 5. One trap
+`encoding/asn1` served as an independent oracle for the subset where BER and
+DER agree, until the golden harness landed. One trap
 worth knowing: `encoding/asn1` maps a Go `string` to PrintableString (tag
 19), whereas an `LDAPString` is an OCTET STRING (tag 4), so a cross-check
 written with `string` compares the wrong tag and fails against correct
 output. Use `[]byte`.
 
-Every other package has no tests, because it has no code. `make test`
-reports "no test files" for those, which is the honest result and not a
-passing suite.
+Every package is tested. Counting top-level `Test` functions: `internal/ber`
+22, `internal/ldap` 34, `internal/server` 30, `internal/schema` 23,
+`internal/store` 101, `internal/acl` 7, `internal/dn` 1 (table-driven, over
+a corpus derived from slapd itself), `internal/golden` 11, `cmd/olivined` 4.
+The store's tests skip unless `OLIVINE_TEST_DSN` or `TEST_DATABASE_URL`
+names a reachable Postgres, so `make test` alone does not exercise them —
+`make store` does, and the CI sets the variable so the service container is
+not standing idle.
 
 The toolchain itself is verified: `scripts/check-style.sh` was checked
 against a deliberately bad file to confirm it fails on both an 87-column
 line and a 42-line function. A style checker that cannot fail is worse than
 none.
 
-The golden harness (plan step 5) is deliberately sequenced before schema and
-the operations, so that everything from that point on is verified against the
-C rather than reasoned about.
+The golden harness (plan step 5) was deliberately sequenced before schema
+and the operations, so that everything from that point on is verified
+against the C rather than reasoned about. It has corrected this
+implementation roughly a dozen times; the corrections are recorded in §3.1
+rather than discarded.
+
+The comparisons are `make golden` (protocol), `golden-data` (search and the
+root DSE, plus `TestDataScriptsAreNotVacuous` — two servers agreeing about
+silence proves nothing), `golden-acl` (nine policies), `golden-limits`,
+`golden-paged` and `golden-sasl`. `make pod-run` is the end-to-end check: it
+stands up the scratch image against a throwaway Postgres and drives it with
+upstream's own `ldapsearch`, `ldapmodify` and `ldapwhoami` — including a
+write to `cn=config` whose effect is then read back.

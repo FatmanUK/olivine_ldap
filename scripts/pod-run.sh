@@ -162,6 +162,38 @@ if printf '%s' "$cfg" | grep -q "ARGON2"; then
 	exit 1
 fi
 
+# And the configuration is writable, through upstream's own
+# ldapmodify. This is the proof that a configuration change is
+# something other than a redeploy: the new limit is in force on
+# the running server a moment later, and it is in Postgres, so
+# every other replica picks it up too.
+echo "pod-run: changing cn=config with upstream ldapmodify"
+mod=$(podman run --rm --network "$net" \
+	--entrypoint /bin/sh "$oracle" -c \
+	"printf '%s\n' 'dn: cn=config' 'changetype: modify' \
+		'replace: olcSizeLimit' 'olcSizeLimit: 17' \
+		| LDAPTLS_REQCERT=never \
+		/opt/openldap/bin/ldapmodify \
+			-H ldaps://${srv}:6360 -x \
+			-D 'cn=root,dc=example,dc=com' \
+			-w smoketest 2>&1") || true
+
+printf '%s\n' "$mod" | sed 's/^/  /'
+back=$(podman run --rm --network "$net" \
+	--entrypoint /bin/sh "$oracle" -c \
+	"LDAPTLS_REQCERT=never /opt/openldap/bin/ldapsearch \
+		-H ldaps://${srv}:6360 -x \
+		-D 'cn=root,dc=example,dc=com' -w smoketest \
+		-b 'cn=config' -s base -LLL '(objectClass=*)' \
+		olcSizeLimit 2>&1") || true
+
+printf '%s\n' "$back" | sed 's/^/  /'
+if ! printf '%s' "$back" | grep -q "olcSizeLimit: 17"; then
+	echo "pod-run: the configuration change did not take" >&2
+	podman logs "$srv" 2>&1 | tail -20 >&2
+	exit 1
+fi
+
 # The strongest interoperability check here: upstream's own
 # ldapwhoami, binding by certificate with SASL EXTERNAL. Olivine
 # completes EXTERNAL in one round where slapd's Cyrus-backed

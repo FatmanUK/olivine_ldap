@@ -15,12 +15,28 @@ func configSearch(
 		presentFilter("objectClass"))
 }
 
-// withConfig sets up a store with a root DN and limits, so the
-// projection has something to show.
+// withConfig stores a configuration, so the projection has
+// something to show and a write has something to change.
+//
+// Through Bootstrap rather than the in-memory setters, because
+// the database is the authority: a write to cn=config republishes
+// the whole configuration from it, and a setting that was only
+// ever in memory would vanish at that point.
 func withConfig(t *testing.T, s *Store) {
 	t.Helper()
-	withRoot(t, s)
-	s.SetLimits(Limits{Size: 42, Time: 99})
+	hashed, err := HashPassword("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Bootstrap(Config{
+		Suffixes:         []string{"dc=example,dc=com"},
+		RootDN:           "cn=root,dc=example,dc=com",
+		RootPasswordHash: hashed,
+		Limits:           Limits{Size: 42, Time: 99},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 // cn=config is readable by the administrator and invisible to
@@ -128,28 +144,15 @@ func TestConfigNeverShowsThePassword(t *testing.T) {
 	}
 }
 
-// Every write is refused, naming the environment instead. Two
-// sources of truth that can disagree is worse than one that cannot
-// be edited live.
-func TestConfigIsReadOnly(t *testing.T) {
+// The shape of the tree is fixed: there is one database, so no
+// entry can be added and none can go away. Only values change.
+func TestConfigEntriesCannotBeAddedOrRemoved(
+	t *testing.T,
+) {
 	s := testStore(t)
 	withConfig(t, s)
 
-	res := s.BackendModify(&ldap.ModifyRequest{
-		Object: ConfigDN,
-		Modifications: []ldap.Modification{{
-			Op: ldap.ModifyReplace,
-			Attribute: ldap.AttributeChange{
-				Type:   "olcSizeLimit",
-				Values: []string{"1"},
-			},
-		}},
-	}, admin)
-	if res.Code != ldap.UnwillingToPerform {
-		t.Errorf("modify: code = %v, want "+
-			"unwillingToPerform", res.Code)
-	}
-	res = s.BackendDelete(databaseDN, admin)
+	res := s.BackendDelete(databaseDN, admin)
 	if res.Code != ldap.UnwillingToPerform {
 		t.Errorf("delete: code = %v, want "+
 			"unwillingToPerform", res.Code)

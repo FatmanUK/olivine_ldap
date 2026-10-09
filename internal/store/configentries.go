@@ -66,10 +66,32 @@ func (s *Store) databaseEntry() configEntry {
 			Type: "olcSuffix", Values: suffixes,
 		})
 	}
-	if s.rootDN != "" {
-		a = append(a, attr("olcRootDN", s.rootDN))
+	c := s.conf()
+	if c.rootDN != "" {
+		a = append(a, attr("olcRootDN", c.rootPretty))
+	}
+	if len(c.access) > 0 {
+		a = append(a, ldap.AttributeChange{
+			Type: "olcAccess", Values: indexed(c.access),
+		})
 	}
 	return configEntry{DN: databaseDN, Attributes: a}
+}
+
+// indexed renders ordered values as slapd stores them.
+//
+// olcAccess is ordered and its order is its whole meaning — the
+// first matching clause decides — so slapd prefixes each value
+// with its position, {0}, {1}, and so on (bconfig.c:6190 reads
+// the same prefix back when a value is inserted). Reproducing it
+// means a client that round-trips the attribute keeps the order
+// it read.
+func indexed(values []string) []string {
+	out := make([]string, 0, len(values))
+	for i, v := range values {
+		out = append(out, "{"+strconv.Itoa(i)+"}"+v)
+	}
+	return out
 }
 
 // projectConfig applies the requested attribute list.

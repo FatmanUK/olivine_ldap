@@ -10,16 +10,22 @@ import (
 // A Store with no policy grants read on everything, which is
 // slapd's default when no access directive is configured
 // (frontend.c:99, be_dfltaccess = ACL_READ).
+//
+// In memory only; see AddSuffix.
 func (s *Store) SetPolicy(p *acl.Policy) {
-	s.policy = p
+	_ = s.mutate(func(c *settings) error {
+		c.policy = p
+		return nil
+	})
 }
 
 // policyOrDefault returns the policy in force.
 func (s *Store) policyOrDefault() *acl.Policy {
-	if s.policy == nil {
+	p := s.conf().policy
+	if p == nil {
 		return acl.NewPolicy()
 	}
-	return s.policy
+	return p
 }
 
 // Identity is re-exported so callers need not name two types

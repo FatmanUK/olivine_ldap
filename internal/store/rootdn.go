@@ -20,6 +20,8 @@ import (
 // user and not the administrator.
 //
 // The password is stored hashed, in the same format as any other.
+//
+// In memory only; see AddSuffix.
 func (s *Store) SetRootDN(
 	rawDN, hashedPassword string,
 ) error {
@@ -27,19 +29,18 @@ func (s *Store) SetRootDN(
 	if err != nil {
 		return err
 	}
-	_ = pretty
-	if err != nil {
-		return err
-	}
-	s.rootDN = norm
-	s.rootPretty = pretty
-	s.rootPassword = hashedPassword
-	return nil
+	return s.mutate(func(c *settings) error {
+		c.rootDN = norm
+		c.rootPretty = pretty
+		c.rootPassword = hashedPassword
+		return nil
+	})
 }
 
 // isRoot reports whether an identity is the administrator.
 func (s *Store) isRoot(who Identity) bool {
-	return s.rootDN != "" && who.DN == s.rootDN
+	root := s.conf().rootDN
+	return root != "" && who.DN == root
 }
 
 // bindAsRoot answers a bind against the configured rootdn.
@@ -50,15 +51,16 @@ func (s *Store) isRoot(who Identity) bool {
 func (s *Store) bindAsRoot(
 	req *ldap.BindRequest,
 ) (Identity, ldap.Result, bool) {
-	if s.rootDN == "" {
+	c := s.conf()
+	if c.rootDN == "" {
 		return Identity{}, ldap.Result{}, false
 	}
 	norm, _, err := s.normalise(req.Name)
-	if err != nil || norm != s.rootDN {
+	if err != nil || norm != c.rootDN {
 		return Identity{}, ldap.Result{}, false
 	}
-	if s.rootPassword == "" ||
-		!VerifyPassword(s.rootPassword, req.Simple) {
+	if c.rootPassword == "" ||
+		!VerifyPassword(c.rootPassword, req.Simple) {
 		return Identity{}, ldap.Result{
 			Code: ldap.InvalidCredentials,
 		}, true
@@ -66,7 +68,7 @@ func (s *Store) bindAsRoot(
 	// The rootdn has no entry, so there is no stored pretty
 	// form; the configured spelling is the best there is.
 	return Identity{
-		DN: s.rootDN, Pretty: s.rootPretty,
+		DN: c.rootDN, Pretty: c.rootPretty,
 	}, ldap.Result{Code: ldap.Success}, true
 }
 

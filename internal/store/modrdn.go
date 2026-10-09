@@ -22,6 +22,10 @@ var ErrNewRDNExists = errors.New(
 func (s *Store) BackendModDN(
 	req *ldap.ModDNRequest, who Identity,
 ) ldap.Result {
+	if s.isConfigTarget(req.Entry) ||
+		s.isConfigTarget(req.NewSuperior) {
+		return refuseConfigWrite()
+	}
 	if res, ok := requireAuthenticatedUpdate(who); !ok {
 		return res
 	}

@@ -62,5 +62,26 @@ A store holds declared naming contexts, as slapd takes from
 `suffix "dc=example,dc=com"`. They matter twice: an entry whose
 DN *is* a suffix has no parent in the database and must still be
 addable (nothing holds `dc=com`), and a DN under no suffix does
-not belong here at all. Configuration proper is plan step 10, so
-for now a caller declares them with `AddSuffix`.
+not belong here at all.
+
+They are configuration, so they live in `config_settings` with
+everything else `cn=config` projects — `Bootstrap` seeds them
+from the environment on a first start and reads them back
+afterwards. `AddSuffix` is an in-memory override for the tests
+and does not persist: a write to `cn=config` republishes the
+whole configuration from the database and would discard it.
+
+## The configuration table
+
+| Column  | Holds                                       |
+|---------|---------------------------------------------|
+| `entry` | which `cn=config` entry the value is on     |
+| `key`   | the attribute, lower-cased                  |
+| `seq`   | the value's position within that attribute  |
+| `value` | the value                                   |
+
+A row per value, because LDAP attributes are multi-valued, and
+`seq` because `olcAccess` is *ordered* — the first matching
+clause decides, so the order is the policy. `(entry, key, seq)`
+is unique, which is what makes two replicas seeding at once
+harmless: the loser's inserts conflict and are dropped.

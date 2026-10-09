@@ -3,8 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -48,70 +50,98 @@ func openBackend(c config) (server.Backend, error) {
 	if err := s.Migrate(); err != nil {
 		return nil, fmt.Errorf("migrating: %w", err)
 	}
-	if err := addSuffixes(s, c.suffixes); err != nil {
+	if err := bootstrap(s, c); err != nil {
 		return nil, err
 	}
-	if err := applyPolicy(s, c); err != nil {
-		return nil, err
-	}
-	if err := applyRootDN(s, c); err != nil {
-		return nil, err
-	}
-	s.SetLimits(store.Limits{
-		Size: c.sizeLimit, Time: c.timeLimit,
-	})
+	// Changes made through another replica are picked up here.
+	// There is no notification channel: Postgres has LISTEN,
+	// but a replica that missed one while reconnecting would
+	// stay wrong indefinitely, and a poll cannot.
+	go refreshConfig(s, c.configRefresh)
 	return store.NewAdapter(s), nil
 }
 
-// applyRootDN configures the administrative identity.
+// bootstrap settles the configuration.
+//
+// The environment is read as *defaults for first boot*: what the
+// database already holds wins, because that is where a change
+// made over LDAP lands and a restarting replica must not revert
+// it. See store.Config.
+func bootstrap(s *store.Store, c config) error {
+	access, err := accessDirectives(c)
+	if err != nil {
+		return err
+	}
+	if err := checkRootDN(c); err != nil {
+		return err
+	}
+	return s.Bootstrap(store.Config{
+		Suffixes:         c.suffixes,
+		Access:           access,
+		RootDN:           c.rootDN,
+		RootPasswordHash: c.rootPassword,
+		Limits: store.Limits{
+			Size: c.sizeLimit, Time: c.timeLimit,
+		},
+	})
+}
+
+// refreshConfig re-reads the configuration on a timer.
+//
+// A failed read is logged and the configuration in force is
+// kept. That is not a departure from crash-only: the database
+// being unreachable already fails every operation that needs it,
+// and swapping in an empty configuration — or dying — because one
+// poll failed would turn a transient fault into an outage.
+func refreshConfig(s *store.Store, every time.Duration) {
+	if every <= 0 {
+		return
+	}
+	for range time.Tick(every) {
+		if err := s.LoadConfig(); err != nil {
+			log.Printf("olivined: refreshing "+
+				"configuration: %v", err)
+		}
+	}
+}
+
+// checkRootDN refuses a half-configured administrator.
 //
 // The password is supplied already hashed, so a plaintext
 // credential never sits in the environment where `ps` and a
 // container inspect would show it. `olivined -hash` prints one.
-func applyRootDN(s *store.Store, c config) error {
-	if c.rootDN == "" {
+func checkRootDN(c config) error {
+	if c.rootDN == "" || c.rootPassword != "" {
 		return nil
 	}
-	if c.rootPassword == "" {
-		return errors.New(
-			"OLIVINE_ROOT_DN needs " +
-				"OLIVINE_ROOT_PASSWORD_HASH")
-	}
-	return s.SetRootDN(c.rootDN, c.rootPassword)
+	return errors.New(
+		"OLIVINE_ROOT_DN needs " +
+			"OLIVINE_ROOT_PASSWORD_HASH")
 }
 
-// applyPolicy loads the access directives, if any.
+// accessDirectives reads the access file, if any.
 //
 // No file means no directives, which is slapd's default of read
 // on everything (frontend.c:99). That is a deliberate default
 // rather than an omission: a server that refused to start without
 // an ACL file would be harder to stand up, and one that defaulted
 // to *deny* would differ from the C.
-func applyPolicy(s *store.Store, c config) error {
+//
+// The directives become olcAccess values, so a policy seeded
+// from a file can be read back — and changed — over LDAP.
+func accessDirectives(c config) ([]string, error) {
 	if c.aclFile == "" {
-		return nil
+		return nil, nil
 	}
 	text, err := os.ReadFile(c.aclFile)
 	if err != nil {
-		return fmt.Errorf("access file: %w", err)
+		return nil, fmt.Errorf("access file: %w", err)
 	}
-	policy, err := acl.Parse(string(text))
+	directives, err := acl.Split(string(text))
 	if err != nil {
-		return fmt.Errorf("%s: %w", c.aclFile, err)
+		return nil, fmt.Errorf("%s: %w", c.aclFile, err)
 	}
-	s.SetPolicy(policy)
-	return nil
-}
-
-// addSuffixes declares the naming contexts.
-func addSuffixes(s *store.Store, suffixes []string) error {
-	for _, suf := range suffixes {
-		if err := s.AddSuffix(suf); err != nil {
-			return fmt.Errorf(
-				"suffix %q: %w", suf, err)
-		}
-	}
-	return nil
+	return directives, nil
 }
 
 // loadSchema builds the schema registry.

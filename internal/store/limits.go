@@ -22,16 +22,22 @@ type Limits struct {
 var DefaultLimits = Limits{Size: 500, Time: 3600}
 
 // SetLimits installs the administrative limits.
+//
+// In memory only; see AddSuffix.
 func (s *Store) SetLimits(l Limits) {
-	s.limits = l
+	_ = s.mutate(func(c *settings) error {
+		c.limits = l
+		return nil
+	})
 }
 
 // limitsOrDefault returns the limits in force.
 func (s *Store) limitsOrDefault() Limits {
-	if s.limits == (Limits{}) {
+	l := s.conf().limits
+	if l == (Limits{}) {
 		return DefaultLimits
 	}
-	return s.limits
+	return l
 }
 
 // effectiveSize returns the size limit for one search.

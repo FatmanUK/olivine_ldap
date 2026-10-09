@@ -227,8 +227,13 @@ func (s *Store) BackendDelete(
 func (s *Store) BackendModify(
 	req *ldap.ModifyRequest, who Identity,
 ) ldap.Result {
+	// cn=config is modifiable, and by the administrator only.
+	// It is answered here rather than falling through, because
+	// the configuration is not in the entries table and none
+	// of what follows — the schema check, the ACL, the
+	// transaction — applies to it.
 	if s.isConfigTarget(req.Object) {
-		return refuseConfigWrite()
+		return s.modifyConfig(req, who)
 	}
 	if res, ok := requireAuthenticatedUpdate(who); !ok {
 		return res
@@ -240,16 +245,31 @@ func (s *Store) BackendModify(
 			return res
 		}
 	}
-	mods := make([]Mod, 0, len(req.Modifications))
-	for _, m := range req.Modifications {
+	mods, res, ok := storeMods(req.Modifications)
+	if !ok {
+		return res
+	}
+	if err := s.Modify(req.Object, mods); err != nil {
+		return resultFor(err)
+	}
+	return ldap.Result{Code: ldap.Success}
+}
+
+// storeMods translates the wire modifications into the store's
+// own.
+func storeMods(
+	in []ldap.Modification,
+) ([]Mod, ldap.Result, bool) {
+	out := make([]Mod, 0, len(in))
+	for _, m := range in {
 		op, ok := modOp(m.Op)
 		if !ok {
-			return ldap.Result{
+			return nil, ldap.Result{
 				Code:       ldap.ProtocolError,
 				Diagnostic: "bad modification type",
-			}
+			}, false
 		}
-		mods = append(mods, Mod{
+		out = append(out, Mod{
 			Op: op,
 			Attribute: Attribute{
 				Type:   m.Attribute.Type,
@@ -257,10 +277,7 @@ func (s *Store) BackendModify(
 			},
 		})
 	}
-	if err := s.Modify(req.Object, mods); err != nil {
-		return resultFor(err)
-	}
-	return ldap.Result{Code: ldap.Success}
+	return out, ldap.Result{}, true
 }
 
 // modOp maps the wire value to the store's own.

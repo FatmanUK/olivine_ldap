@@ -82,6 +82,28 @@ Configuration comes from the environment:
   OLIVINE_SIZELIMIT  maximum entries per search (default 500,
                      as slapd's sizelimit)
   OLIVINE_TIMELIMIT  maximum seconds per search (default 3600)
+  OLIVINE_CONFIG_REFRESH
+                     seconds between re-reads of cn=config, so a
+                     change made through one replica reaches the
+                     others (default 30; 0 disables it)`)
+	usageNotes()
+}
+
+// usageNotes explains which of the variables above are only the
+// first boot's defaults, because that is the part an operator
+// gets wrong: setting OLIVINE_SUFFIX on a directory that already
+// has one does nothing at all.
+func usageNotes() {
+	fmt.Fprintln(os.Stderr, `
+The settings above that a running server can adopt — the
+suffixes, the access policy, the root identity and the limits —
+are *defaults for first boot*. They are stored in the database
+on the first start and read back from it afterwards, so they can
+be changed over LDAP by modifying cn=config and the change
+applies to every replica. What is needed before the database can
+be reached — the DSN, the TLS material, the listen address —
+has nowhere else to come from and is read from the environment
+every time.
 
 TLS is mandatory. There is no cleartext listener and no
 STARTTLS, so a missing certificate is a configuration error
