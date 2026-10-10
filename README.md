@@ -52,36 +52,88 @@ matching. The `slap*` tools are out of scope: they link slapd's backend
 directly rather than opening a socket, so no amount of protocol work
 would make them read a Postgres database.
 
-## Running it
+## Quickstart: a local test server
 
-TLS is mandatory. A missing certificate is a configuration error, not a
-reason to fall back.
+Everything you need for a server you can actually bind to, with nothing
+left as a placeholder.
 
 ```bash
-make build                     # bin/olivined
-./bin/olivined -hash secret    # a password hash for the root DN
+make build
 ```
 
-Configuration comes from the environment — `./bin/olivined` with no
-certificate prints the whole list. The essentials:
+**A certificate.** TLS is mandatory — there is no cleartext fallback — so
+a self-signed pair is the minimum to start. This is the same shape
+`scripts/pod-run.sh` generates for its own smoke test:
 
 ```bash
-OLIVINE_TLS_CERT=/path/cert.pem \
-OLIVINE_TLS_KEY=/path/key.pem \
-OLIVINE_DSN='host=db user=olivine dbname=olivine sslmode=require' \
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	-keyout key.pem -out cert.pem -days 365 \
+	-subj "/CN=localhost" -addext "subjectAltName=DNS:localhost"
+```
+
+**A root password hash.** `-hash` prints one and exits; nothing is
+written anywhere, so pipe it straight into the variable it's for:
+
+```bash
+hash=$(./bin/olivined -hash supersecret)
+```
+
+**A database.** `scripts/postgres-up.sh` starts a throwaway, rootless
+Postgres container and prints its connection string on stdout — this is
+also where a connection password goes, as `password=` in that string:
+
+```bash
+dsn=$(./scripts/postgres-up.sh)
+```
+
+**The server itself.** `OLIVINE_LISTEN` has to be set: the default is
+`:636`, the standard ldaps port, and an unprivileged process cannot bind
+anything below 1024 — the same reason the container sets it to `:6360`
+(see `deploy/Containerfile`). Any high port will do locally:
+
+```bash
+OLIVINE_LISTEN=:1636 \
+OLIVINE_TLS_CERT=cert.pem \
+OLIVINE_TLS_KEY=key.pem \
+OLIVINE_DSN="$dsn" \
 OLIVINE_SUFFIX='dc=example,dc=com' \
 OLIVINE_ROOT_DN='cn=admin,dc=example,dc=com' \
-OLIVINE_ROOT_PASSWORD_HASH='{ARGON2}...' \
+OLIVINE_ROOT_PASSWORD_HASH="$hash" \
 ./bin/olivined
 ```
 
-The suffixes, the access policy, the root identity and the search limits
-are **defaults for first boot**. They are stored in the database on the
-first start and read back from it afterwards, so they can be changed over
-LDAP by modifying `cn=config` — and the change reaches every replica.
-What is needed before the database can be reached, and so has nowhere
-else to come from, is read from the environment every time: the DSN, the
-TLS material, the listen address, the Kerberos keytab.
+**Confirm it, from another shell**, with any LDAPv3 client — here,
+OpenLDAP's own:
+
+```bash
+LDAPTLS_REQCERT=never ldapsearch -H ldaps://localhost:1636 \
+	-x -b '' -s base -LLL namingContexts
+
+LDAPTLS_REQCERT=never ldapwhoami -H ldaps://localhost:1636 \
+	-x -D 'cn=admin,dc=example,dc=com' -w supersecret
+```
+
+**Tear down** when done — `postgres-up.sh`'s container is not removed
+automatically, so that `make store` can reuse it between runs:
+
+```bash
+make postgres-down
+```
+
+The suffix, the access policy, the root identity and the search limits
+set above are **defaults for first boot only**. They are stored in the
+database on the first start and read back from it afterwards, so a
+second run of the same command with a different `OLIVINE_SUFFIX` does
+nothing — the stored value already won. Changing any of them afterwards
+means modifying `cn=config` over LDAP, not re-exporting the variable.
+What *is* read from the environment every time is whatever is needed
+before the database can be reached at all: the DSN, the TLS material,
+the listen address, the Kerberos keytab.
+
+Skipping `OLIVINE_DSN` entirely is a legitimate smaller step: the server
+still starts and answers TLS, and every operation answers
+`unwillingToPerform` — enough to confirm the listener and the
+certificate before wiring up Postgres at all.
 
 ### In a container
 
@@ -90,10 +142,18 @@ make pod-build   # a ~19 MB image from scratch: one static binary
 make pod-run     # smoke-test it against a throwaway Postgres
 ```
 
+`pod-run` is not just a build check. It stands up a dedicated bridge
+network, a throwaway Postgres on it, and the server image — generating
+its own CA, server certificate and client certificate as it goes — then
+drives the running container with upstream's own `ldapsearch`,
+`ldapmodify` and `ldapwhoami`, including a SASL EXTERNAL bind by client
+certificate and a live `cn=config` write. Everything it creates is
+removed on exit, success or failure, and it never touches `make store`'s
+Postgres or another project's containers.
+
 The image has no shell and no package manager, runs as uid 10001 and
-listens on 6360. `make pod-run` is the end-to-end check: it stands the
-image up and drives it with upstream's own `ldapsearch`, `ldapmodify`
-and `ldapwhoami`.
+listens on 6360 — map it with `podman run -p 636:6360 …` to serve the
+standard port from outside.
 
 ## The golden-output harness
 
@@ -112,6 +172,13 @@ make golden-paged    # paged results, four page sizes
 make golden-sasl     # a SASL EXTERNAL bind
 make golden-gssapi   # a SASL GSSAPI bind, two realms, a real KDC
 ```
+
+`golden-build` (`scripts/golden-build.sh`) is the one to run first, and
+the one whose caching is worth understanding: it tags the oracle image
+with the submodule's own commit (`git -C openldap describe --tags`), so
+a stale image is never silently reused across a submodule bump, and a
+current one is never needlessly rebuilt. `FORCE=1 make golden-build`
+rebuilds anyway.
 
 It was built early, before the schema and the operations, so that
 everything after it is verified rather than reasoned about — and it has
@@ -143,6 +210,27 @@ upstream's own `ldapwhoami`, driven at each server in turn, because a
 GSSAPI *initiator* written in Go would be a second implementation of the
 thing under test.
 
+## Scripts
+
+Everything under `scripts/` is invoked through a `make` target — nothing
+here needs running by hand — but knowing what each one actually does
+makes the targets less opaque.
+
+| Script | What it does |
+|---|---|
+| `postgres-up.sh` / `postgres-down.sh` | Start and remove the throwaway Postgres behind `make store` and the quickstart above. `up` prints the connection string on stdout, bound to `127.0.0.1:15432` so it can never be mistaken for a real instance; `down` removes only the container this project named. |
+| `pod-run.sh` | The container smoke test — see "In a container" above. |
+| `golden-build.sh` | Builds the C oracle from the `openldap/` submodule, tagged by its commit. See "The golden-output harness" above. |
+| `check-style.sh` | Enforces the 70-column, 40-line-function rule, over tracked *and* untracked files — `git ls-files --cached --others --exclude-standard`. Run by `make lint` / `make width-check`. |
+| `capture-subschema.sh`, `capture-dn.sh` | Capture slapd's own output — `cn=Subschema`, and `slapdn`'s normalisation — into testdata, so the schema parser and `internal/dn` are checked against what slapd actually emits rather than a transcription of the RFC. Needs the oracle image (`make golden-build` first). |
+| `derive-builtin.sh`, `derive-standard.sh` | Derive the schema Olivine embeds — the attributes `schema_init.c` hardcodes, and the standard set slapd loads — from the captured subschema, so neither can drift from the upstream it came from. |
+| `gssapi-*.sh` | Stand up a two-realm Kerberos KDC inside the oracle container for `make golden-gssapi`; see `internal/gss/README.md` for why two realms. |
+
+The capture/derive scripts are a maintainer workflow, not a day-to-day
+one: run them in that order (`golden-build` → `capture-*` → `derive-*`)
+only after bumping the `openldap/` submodule to a new release, to bring
+the embedded schema up to date with it.
+
 ## Developing
 
 ```bash
@@ -154,9 +242,7 @@ make help        # every target
 ```
 
 Go source is 70 columns wide, counting a tab as 8, and functions are 40
-lines at most. `scripts/check-style.sh` enforces both, over tracked *and*
-untracked files — an earlier version read only the index, and new code
-passed right up until someone staged it.
+lines at most — see `check-style.sh` above.
 
 The C reference is a submodule at `openldap/`, pinned to a release tag
 and never edited:
