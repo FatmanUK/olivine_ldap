@@ -924,6 +924,22 @@ root DSE, plus `TestDataScriptsAreNotVacuous` — two servers agreeing about
 silence proves nothing), `golden-acl` (nine policies), `golden-limits`,
 `golden-paged`, `golden-sasl` and `golden-gssapi`.
 
+**Upstream's own test scripts are not the corpus**, though `CLAUDE.md` and
+`internal/golden/doc.go` both said they were — "113 entries under
+`openldap/tests/scripts`, not something to invent". Counted properly: 19 of
+the 113 are infrastructure (`conf.sh`, `defines.sh`, `start-server`,
+`setup_kdc.sh`), and of the 94 that are tests, **66 drive an offline `slap*`
+tool** — `slapadd`, `slapcat`, `slapindex` — which link slapd's backend
+directly rather than opening a socket, so nothing done at the protocol level
+makes them read a Postgres database. They are out of scope for exactly the
+reason `slapcat` is. The remaining 28 use only the network clients, and
+around 40 of the scripts overall exercise features deliberately not ported.
+
+So the scripts here are written one per behaviour instead. What is reusable
+from upstream is the material *inside* its scripts: the 40 `.ldif` files
+under `openldap/tests/data` as seed data, and the client invocations as cases
+worth stealing.
+
 `golden-gssapi` is shaped differently from the others, and deliberately: the
 client is upstream's own `ldapwhoami`, driven at each server in turn, because
 a GSSAPI *initiator* written in Go would be a second implementation of the

@@ -57,14 +57,55 @@ say so and cite the file and line.
 
 ## The golden-output harness
 
-**Not built yet.** This is the design, and it is the plan's step 5.
-Until it exists, nothing in this section describes code you can run.
+**This is the most useful thing in the repository. Use it.**
 
-`internal/golden` will be the oracle. It builds a test database, drives the same
-script through OpenLDAP built from the `openldap` submodule and through this
-project, and diffs the transcripts. The C runs in a container over TCP; this
-project runs in-process. Reading the C and reasoning about it is guesswork;
-the harness answers directly.
+`internal/golden` is the oracle. It drives the same script through OpenLDAP —
+built from the `openldap` submodule, in a rootless container over TCP — and
+through this project in-process, then diffs the transcripts. Reading the C and
+reasoning about it is guesswork; the harness answers directly, and it has
+corrected this implementation about a dozen times. Those corrections are
+recorded in `BOOTSTRAP.md` §3.1 rather than discarded.
 
-Upstream ships 113 entries under `openldap/tests/scripts`. That is the corpus
-the harness drives — it is not something to invent.
+```bash
+make golden-build    # build the C oracle (slow, needed once)
+make golden          # protocol
+make golden-data     # searches over a seeded tree on both sides
+make golden-acl      # access policies
+make golden-limits   # search limits
+make golden-paged    # paged results
+make golden-sasl     # a SASL EXTERNAL bind
+make golden-gssapi   # a SASL GSSAPI bind, two realms, a real KDC
+```
+
+**Reach for a comparison before reaching for the source.** Twice now, reading a
+function has been less reliable than driving the thing: `slap_sasl_getdn` reads
+as though a cross-realm bind yields a `cn=REALM` RDN and it does not, because
+the behaviour belongs to Cyrus and slapd together. When the two cannot be
+compared — because the protocol leaves something open, or the harness cannot
+reach the case — say so in the code rather than implying a comparison.
+
+Where a comparison needs a client that is not Go, drive **upstream's own
+client** rather than writing a second implementation of the thing under test.
+That is what `golden-gssapi` does with `ldapwhoami`, and `pod-run` with
+`ldapsearch`, `ldapmodify` and `ldapwhoami`.
+
+### Upstream's own test scripts are not a corpus this can run
+
+An earlier version of this file said the 113 entries under
+`openldap/tests/scripts` were "the corpus the harness drives". They are not,
+and the correction is worth keeping:
+
+- 19 of the 113 are not tests at all — `conf.sh`, `defines.sh`,
+  `functions.sh`, `start-server`, `setup_kdc.sh` and the like.
+- Of the 94 that are, **66 invoke an offline `slap*` tool** — `slapadd`,
+  `slapcat`, `slapindex`. Those link slapd's backend directly instead of
+  opening a socket, so no amount of protocol work makes them read a Postgres
+  database. They are out of scope for the same reason `slapcat` is.
+- The remaining 28 use only the network clients, and about 40 of the scripts
+  overall exercise features deliberately not ported — replication, `back-sql`,
+  the overlays, the proxy backends.
+
+What *is* reusable is the material inside them: the 40 `.ldif` files under
+`openldap/tests/data` as seed data, and the `ldapsearch`/`ldapmodify`
+invocations as cases worth stealing. Mine them for cases; do not try to run
+them.

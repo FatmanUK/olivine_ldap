@@ -13,8 +13,9 @@ import (
 // unwillingToPerform, which would differ from the oracle for
 // reasons that say nothing about either implementation.
 //
-// The 113 entries under openldap/tests/scripts are the eventual
-// corpus.
+// One script per behaviour, written here rather than taken from
+// openldap/tests/scripts — see the package comment for why those
+// cannot be driven at this.
 func Scripts() []Script {
 	return []Script{
 		startTLSScript(),
