@@ -270,3 +270,32 @@ wrong when checked.
   that looks odd.
 - `internal/*/README.md` — the per-package notes, where there is
   something to say that the code cannot.
+
+## License
+
+GPLv3 or later. See `LICENSE` for the full text.
+
+Chosen deliberately, and differently from OpenLDAP itself, which
+uses its own permissive license: GPL was picked so that anyone who
+distributes a modified Olivine has to release the source for their
+changes. `gokrb5` (Apache-2.0) is the only dependency that matters
+here, because Apache-2.0 and GPLv2 are mutually incompatible — the
+reason this is GPLv3 and not GPLv2.
+
+```
+Olivine LDAP
+Copyright (C) 2026  Adam J. Richardson
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+```
