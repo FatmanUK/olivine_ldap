@@ -1,8 +1,8 @@
 package ldap
 
 import (
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
-	"github.com/FatmanUK/openldap_olivine/internal/gss"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/gss"
 )
 
 // BindRequest is RFC 4511 4.2.

@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/FatmanUK/openldap_olivine/internal/acl"
+	"github.com/FatmanUK/olivine_ldap/internal/acl"
 )
 
 // The attribute names the configuration is keyed by, lower-cased

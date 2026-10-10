@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
-	"github.com/FatmanUK/openldap_olivine/internal/store"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/store"
 )
 
 // limitsPort keeps this test off the other oracles' ports.

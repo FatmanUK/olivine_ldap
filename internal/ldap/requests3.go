@@ -1,6 +1,6 @@
 package ldap
 
-import "github.com/FatmanUK/openldap_olivine/internal/ber"
+import "github.com/FatmanUK/olivine_ldap/internal/ber"
 
 // readAttributeList reads a SEQUENCE OF Attribute, where each
 // is a type and a SET OF value.

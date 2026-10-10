@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // sizeSearch is a subtree search with a request size limit.

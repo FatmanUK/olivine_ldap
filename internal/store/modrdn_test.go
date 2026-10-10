@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // admin is the configured root identity in these tests.

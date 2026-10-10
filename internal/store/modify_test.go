@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // valuesOf lists one attribute's values, sorted.

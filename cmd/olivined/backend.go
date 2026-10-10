@@ -12,11 +12,11 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/FatmanUK/openldap_olivine/internal/acl"
-	"github.com/FatmanUK/openldap_olivine/internal/gss"
-	"github.com/FatmanUK/openldap_olivine/internal/schema"
-	"github.com/FatmanUK/openldap_olivine/internal/server"
-	"github.com/FatmanUK/openldap_olivine/internal/store"
+	"github.com/FatmanUK/olivine_ldap/internal/acl"
+	"github.com/FatmanUK/olivine_ldap/internal/gss"
+	"github.com/FatmanUK/olivine_ldap/internal/schema"
+	"github.com/FatmanUK/olivine_ldap/internal/server"
+	"github.com/FatmanUK/olivine_ldap/internal/store"
 )
 
 // openBackend builds the store from the environment.

@@ -1,6 +1,6 @@
 package ldap
 
-import "github.com/FatmanUK/openldap_olivine/internal/ber"
+import "github.com/FatmanUK/olivine_ldap/internal/ber"
 
 // Sync control OIDs, from RFC 4533. They are recognised only
 // to be refused: syncrepl is not ported, because replication

@@ -6,8 +6,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // maxSASLSteps bounds a SASL exchange, so a server that never

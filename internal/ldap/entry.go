@@ -1,6 +1,6 @@
 package ldap
 
-import "github.com/FatmanUK/openldap_olivine/internal/ber"
+import "github.com/FatmanUK/olivine_ldap/internal/ber"
 
 // SearchEntry is one entry to send back.
 type SearchEntry struct {

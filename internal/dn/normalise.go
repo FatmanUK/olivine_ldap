@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/FatmanUK/openldap_olivine/internal/schema"
+	"github.com/FatmanUK/olivine_ldap/internal/schema"
 )
 
 // Normalise returns the DN in the form slapd's dnNormalize

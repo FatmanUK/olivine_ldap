@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/FatmanUK/openldap_olivine/internal/acl"
+	"github.com/FatmanUK/olivine_ldap/internal/acl"
 )
 
 // configAttr describes one settable configuration attribute.

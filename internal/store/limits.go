@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // Limits are the administrative search limits, as slapd's

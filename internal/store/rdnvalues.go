@@ -3,8 +3,8 @@ package store
 import (
 	"gorm.io/gorm"
 
-	"github.com/FatmanUK/openldap_olivine/internal/dn"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/dn"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // moveRDNValues brings an entry's attributes in line with its new

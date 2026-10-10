@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
 )
 
 // envelope builds an LDAPMessage around one operation.

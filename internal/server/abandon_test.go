@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // slowBackend blocks a search until released, so a test can

@@ -1,6 +1,6 @@
 package store
 
-import "github.com/FatmanUK/openldap_olivine/internal/ldap"
+import "github.com/FatmanUK/olivine_ldap/internal/ldap"
 
 // Adapter makes a Store satisfy the Backend interface
 // internal/server declares.

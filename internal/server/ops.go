@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // operate dispatches one request to the backend.

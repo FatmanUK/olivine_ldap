@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/schema"
+	"github.com/FatmanUK/olivine_ldap/internal/schema"
 )
 
 // corpusPath holds slapdn's answers, captured by

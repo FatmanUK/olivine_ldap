@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // seed builds a small tree:

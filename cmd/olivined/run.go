@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/FatmanUK/openldap_olivine/internal/server"
-	"github.com/FatmanUK/openldap_olivine/internal/store"
+	"github.com/FatmanUK/olivine_ldap/internal/server"
+	"github.com/FatmanUK/olivine_ldap/internal/store"
 )
 
 // config is the daemon's whole configuration.

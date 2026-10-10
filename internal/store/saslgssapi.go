@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/FatmanUK/openldap_olivine/internal/gss"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/gss"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // SetGSSAcceptor installs the Kerberos service keys, which is

@@ -5,8 +5,8 @@ import (
 	"io"
 	"sort"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // onePage sends one paged request and reads the whole reply.

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/FatmanUK/openldap_olivine/internal/server"
+	"github.com/FatmanUK/olivine_ldap/internal/server"
 )
 
 // Backend is what StartOlivine attaches, if anything. A nil

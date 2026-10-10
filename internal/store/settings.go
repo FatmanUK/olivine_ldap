@@ -4,7 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/FatmanUK/openldap_olivine/internal/acl"
+	"github.com/FatmanUK/olivine_ldap/internal/acl"
 )
 
 // settings is the configuration in force: everything cn=config

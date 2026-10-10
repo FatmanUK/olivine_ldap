@@ -1,7 +1,7 @@
 package store
 
 import (
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // SASL mechanism names Olivine implements.

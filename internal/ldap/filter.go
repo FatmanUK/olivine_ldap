@@ -1,6 +1,6 @@
 package ldap
 
-import "github.com/FatmanUK/openldap_olivine/internal/ber"
+import "github.com/FatmanUK/olivine_ldap/internal/ber"
 
 // Filter tags, from include/ldap.h:571-591.
 const (

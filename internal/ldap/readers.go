@@ -1,6 +1,6 @@
 package ldap
 
-import "github.com/FatmanUK/openldap_olivine/internal/ber"
+import "github.com/FatmanUK/olivine_ldap/internal/ber"
 
 // nextString reads the next element's contents as a string.
 func nextString(d *ber.Decoder) (string, error) {

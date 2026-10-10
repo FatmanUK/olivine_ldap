@@ -1,6 +1,6 @@
 package server
 
-import "github.com/FatmanUK/openldap_olivine/internal/ldap"
+import "github.com/FatmanUK/olivine_ldap/internal/ldap"
 
 // Backend is what the dispatcher needs from a database.
 //

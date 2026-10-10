@@ -1,6 +1,6 @@
 package ldap
 
-import "github.com/FatmanUK/openldap_olivine/internal/ber"
+import "github.com/FatmanUK/olivine_ldap/internal/ber"
 
 // OIDWhoAmI is the "Who am I?" extended operation, RFC 4532 and
 // ldap.h:435.

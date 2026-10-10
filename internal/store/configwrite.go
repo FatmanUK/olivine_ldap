@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // configTable is every configuration value, by entry and then by

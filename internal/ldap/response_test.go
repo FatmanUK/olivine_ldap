@@ -3,7 +3,7 @@ package ldap
 import (
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
 )
 
 func TestEncodeResultRoundTrips(t *testing.T) {

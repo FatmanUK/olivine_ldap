@@ -3,8 +3,8 @@ package store
 import (
 	"sort"
 
-	"github.com/FatmanUK/openldap_olivine/internal/acl"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/acl"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // project turns a stored entry into the entry to send back,

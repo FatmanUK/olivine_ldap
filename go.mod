@@ -1,4 +1,4 @@
-module github.com/FatmanUK/openldap_olivine
+module github.com/FatmanUK/olivine_ldap
 
 go 1.26.0
 

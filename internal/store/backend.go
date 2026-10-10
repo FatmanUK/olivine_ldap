@@ -3,9 +3,9 @@ package store
 import (
 	"errors"
 
-	"github.com/FatmanUK/openldap_olivine/internal/acl"
-	"github.com/FatmanUK/openldap_olivine/internal/dn"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/acl"
+	"github.com/FatmanUK/olivine_ldap/internal/dn"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // The methods below make a Store satisfy the Backend interface

@@ -1,6 +1,6 @@
 package ldap
 
-import "github.com/FatmanUK/openldap_olivine/internal/ber"
+import "github.com/FatmanUK/olivine_ldap/internal/ber"
 
 // Operation tags, from include/ldap.h:522-548. These are
 // packed BER tags, not ordinals: the class and constructed

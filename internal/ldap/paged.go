@@ -3,7 +3,7 @@ package ldap
 import (
 	"errors"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
 )
 
 // OIDPagedResults is the simple paged results control, RFC 2696.

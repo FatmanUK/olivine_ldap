@@ -3,7 +3,7 @@ package store
 import (
 	"gorm.io/gorm"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // Delete removes one entry.

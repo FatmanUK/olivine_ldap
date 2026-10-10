@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/FatmanUK/openldap_olivine/internal/server"
+	"github.com/FatmanUK/olivine_ldap/internal/server"
 )
 
 // writeTestKeyPair writes a self-signed certificate and key.

@@ -9,8 +9,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/FatmanUK/openldap_olivine/internal/schema"
-	"github.com/FatmanUK/openldap_olivine/internal/store"
+	"github.com/FatmanUK/olivine_ldap/internal/schema"
+	"github.com/FatmanUK/olivine_ldap/internal/store"
 )
 
 // seedLDIF is the tree both implementations are given.

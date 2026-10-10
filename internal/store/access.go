@@ -1,8 +1,8 @@
 package store
 
 import (
-	"github.com/FatmanUK/openldap_olivine/internal/acl"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/acl"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // SetPolicy installs the access policy.

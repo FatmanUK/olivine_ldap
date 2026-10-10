@@ -7,9 +7,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/FatmanUK/openldap_olivine/internal/dn"
-	"github.com/FatmanUK/openldap_olivine/internal/gss"
-	"github.com/FatmanUK/openldap_olivine/internal/schema"
+	"github.com/FatmanUK/olivine_ldap/internal/dn"
+	"github.com/FatmanUK/olivine_ldap/internal/gss"
+	"github.com/FatmanUK/olivine_ldap/internal/schema"
 )
 
 var (

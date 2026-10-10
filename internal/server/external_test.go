@@ -10,8 +10,8 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // clientCert issues a client certificate with the given subject.

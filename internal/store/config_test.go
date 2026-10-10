@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // configSearch searches the configuration tree.

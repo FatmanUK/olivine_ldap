@@ -3,7 +3,7 @@ package store
 import (
 	"strings"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // ConfigDN is the configuration naming context, as slapd's.

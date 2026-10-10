@@ -127,10 +127,13 @@ that have aged worst in the C:
 - `make lint`, `make test`, `make race`, `make store`, `make build`,
   `make pod-run` and all seven golden comparisons pass.
 - Host toolchain: Go 1.26.5, Podman 5.8.3.
-- The module path is settled by the remote:
-  `github.com/FatmanUK/openldap_olivine`. Note that the remote repository
-  name inverts the local directory name (`olivine_ldap`); the Go module path
-  follows the remote.
+- The module path is `github.com/FatmanUK/olivine_ldap`, matching the local
+  directory name and the actual GitHub repository. It was briefly
+  `openldap_olivine`, following `git remote -v`'s cached URL after the
+  repository was renamed on GitHub without updating the local remote — which
+  still resolves, because GitHub redirects the old name. The module path was
+  the one place that mismatch actually mattered, so it was corrected rather
+  than left to redirect forever.
 
 ## 2. Where the plan stands
 

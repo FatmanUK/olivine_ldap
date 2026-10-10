@@ -3,7 +3,7 @@ package store
 import (
 	"strings"
 
-	"github.com/FatmanUK/openldap_olivine/internal/schema"
+	"github.com/FatmanUK/olivine_ldap/internal/schema"
 )
 
 // NormaliseValue reduces a value to the form its equality

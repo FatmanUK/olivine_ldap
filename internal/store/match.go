@@ -3,8 +3,8 @@ package store
 import (
 	"strings"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
-	"github.com/FatmanUK/openldap_olivine/internal/schema"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/schema"
 )
 
 // Matches reports whether an entry satisfies a filter.

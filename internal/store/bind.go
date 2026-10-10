@@ -3,8 +3,8 @@ package store
 import (
 	"strings"
 
-	"github.com/FatmanUK/openldap_olivine/internal/acl"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/acl"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // userPasswordAttr is where credentials live.

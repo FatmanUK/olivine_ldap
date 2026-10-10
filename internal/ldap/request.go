@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
 )
 
 // ErrBadRequest reports a request body that will not decode.

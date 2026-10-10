@@ -7,9 +7,9 @@ import (
 	"net"
 	"sync"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ber"
-	"github.com/FatmanUK/openldap_olivine/internal/gss"
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ber"
+	"github.com/FatmanUK/olivine_ldap/internal/gss"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // conn is one client connection.

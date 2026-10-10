@@ -3,7 +3,7 @@ package store
 import (
 	"bytes"
 
-	"github.com/FatmanUK/openldap_olivine/internal/ldap"
+	"github.com/FatmanUK/olivine_ldap/internal/ldap"
 )
 
 // bindPlain authenticates a SASL PLAIN credential.
